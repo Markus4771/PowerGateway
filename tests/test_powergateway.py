@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,6 +10,7 @@ MODULE_PATH = Path(__file__).parents[1] / "src" / "powergateway.py"
 SPEC = importlib.util.spec_from_file_location("powergateway", MODULE_PATH)
 assert SPEC and SPEC.loader
 powergateway = importlib.util.module_from_spec(SPEC)
+sys.modules["powergateway"] = powergateway
 SPEC.loader.exec_module(powergateway)
 
 
