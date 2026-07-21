@@ -1,0 +1,16 @@
+[Unit]
+Description=PowerGateway WireGuard-Konfiguration anwenden
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/opt/powergateway/src
+ExecStart=/opt/powergateway/venv/bin/python /opt/powergateway/src/wireguard_apply.py
+NoNewPrivileges=false
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/etc/wireguard /var/lib/powergateway
