@@ -12,6 +12,7 @@ CONFIG_DIR="/etc/powergateway"
 DATA_DIR="/var/lib/powergateway"
 SERVICE_FILE="/etc/systemd/system/powergateway.service"
 WEB_SERVICE_FILE="/etc/systemd/system/powergateway-web.service"
+NETWORK_SERVICE_FILE="/etc/systemd/system/powergateway-network.service"
 
 echo "Installiere Systempakete ..."
 apt-get update
@@ -45,20 +46,24 @@ fi
 
 install -m 0644 "${PROJECT_DIR}/packaging/systemd/powergateway.service" "${SERVICE_FILE}"
 install -m 0644 "${PROJECT_DIR}/packaging/systemd/powergateway-web.service" "${WEB_SERVICE_FILE}"
+install -m 0644 "${PROJECT_DIR}/packaging/systemd/powergateway-network.service" "${NETWORK_SERVICE_FILE}"
 
 chown -R root:root "${INSTALL_DIR}"
-chmod 0755 "${INSTALL_DIR}/src/powergateway.py" "${INSTALL_DIR}/src/service.py" "${INSTALL_DIR}/src/webapp.py"
+chmod 0755 "${INSTALL_DIR}/src/powergateway.py" "${INSTALL_DIR}/src/service.py" "${INSTALL_DIR}/src/webapp.py" "${INSTALL_DIR}/src/networkctl.py"
 chown powergateway:powergateway "${DATA_DIR}"
 
 systemctl daemon-reload
-systemctl enable powergateway.service powergateway-web.service
+systemctl enable powergateway-network.service powergateway.service powergateway-web.service
+systemctl restart powergateway-network.service
 systemctl restart powergateway.service powergateway-web.service
 
 echo
 echo "PowerGateway wurde installiert/aktualisiert."
 echo "Konfiguration: ${CONFIG_DIR}/config.toml"
 echo "Statusdatei: ${DATA_DIR}/status.json"
-echo "Dienststatus: sudo systemctl status powergateway powergateway-web --no-pager"
-echo "Log: sudo journalctl -u powergateway -u powergateway-web -f"
+echo "Netzwerkstatus: ${DATA_DIR}/network_status.json"
+echo "Dienststatus: sudo systemctl status powergateway-network powergateway powergateway-web --no-pager"
+echo "Log: sudo journalctl -u powergateway-network -u powergateway -u powergateway-web -f"
 echo "Weboberfläche: http://$(hostname -I | awk '{print $1}'):8080"
+echo "Netzwerk: nmcli device status"
 echo "LTE: mmcli -L"
