@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import powergateway as core
-from sml_obis import KNOWN_OBIS, decode_obis_values
+from sml_obis import OBIS_REGISTRY, decode_obis_values
 
 LATEST_VALUES_PATH = Path(os.environ.get("POWERGATEWAY_LATEST_VALUES", "/var/lib/powergateway/latest_values.json"))
 _original_telegram_payload = core.telegram_payload
@@ -30,6 +30,7 @@ def telegram_payload(frame: bytes, gateway_name: str) -> dict[str, Any]:
     measurements = [item.to_dict() for item in decode_obis_values(frame)]
     payload["measurements"] = measurements
     payload["values"] = {item["key"]: item["value"] for item in measurements}
+    payload["unknown_obis"] = [item["obis"] for item in measurements if not item.get("known", True)]
     if measurements:
         latest = {
             **payload["values"],
@@ -37,11 +38,14 @@ def telegram_payload(frame: bytes, gateway_name: str) -> dict[str, Any]:
             "received_at": payload.get("received_at"),
             "telegram_sha256": payload.get("sha256"),
             "measurements": measurements,
+            "unknown_obis": payload["unknown_obis"],
         }
         _atomic_write(LATEST_VALUES_PATH, latest)
         logging.info("OBIS-Werte erkannt: %s", ", ".join(item["key"] for item in measurements))
+        if payload["unknown_obis"]:
+            logging.info("Unbekannte OBIS-Kennzahlen: %s", ", ".join(payload["unknown_obis"]))
     else:
-        logging.warning("SML-Telegramm enthält noch keine erkannten OBIS-Werte")
+        logging.warning("SML-Telegramm enthält keine auswertbaren numerischen OBIS-Werte")
     return payload
 
 
@@ -65,6 +69,7 @@ def publish_or_buffer(
             "received_at": decoded.get("received_at"),
             "telegram_sha256": decoded.get("sha256"),
             "measurements": measurements,
+            "unknown_obis": decoded.get("unknown_obis", []),
         }
         _original_publish_or_buffer(
             publisher,
@@ -90,22 +95,17 @@ def publish_discovery(self: core.MqttPublisher) -> None:
         "name": self.gateway_name,
         "manufacturer": "PowerGateway",
         "model": "Raspberry Pi Meter Gateway",
-        "sw_version": "0.4.0-dev",
+        "sw_version": "0.5.0-dev",
     }
-    for obis, (key, name, unit, state_class) in KNOWN_OBIS.items():
-        device_class = {
-            "kWh": "energy",
-            "Wh": "energy",
-            "W": "power",
-            "V": "voltage",
-            "A": "current",
-            "Hz": "frequency",
-        }.get(unit)
+    published_keys: set[str] = set()
+    for obis, definition in OBIS_REGISTRY.items():
+        if definition.key in published_keys or definition.diagnostic:
+            continue
         config: dict[str, Any] = {
-            "name": name,
-            "unique_id": f"{self.gateway_name}_{key}",
+            "name": definition.name,
+            "unique_id": f"{self.gateway_name}_{definition.key}",
             "state_topic": f"{self.topic_prefix}/meter/values",
-            "value_template": "{{ value_json." + key + " }}",
+            "value_template": "{{ value_json." + definition.key + " }}",
             "availability_topic": f"{self.topic_prefix}/availability",
             "payload_available": "online",
             "payload_not_available": "offline",
@@ -113,19 +113,20 @@ def publish_discovery(self: core.MqttPublisher) -> None:
             "json_attributes_topic": f"{self.topic_prefix}/meter/values",
             "json_attributes_template": "{{ {'obis': '" + obis + "'} | tojson }}",
         }
-        if unit:
-            config["unit_of_measurement"] = unit
-        if device_class:
-            config["device_class"] = device_class
-        if state_class:
-            config["state_class"] = state_class
+        if definition.unit:
+            config["unit_of_measurement"] = definition.unit
+        if definition.device_class:
+            config["device_class"] = definition.device_class
+        if definition.state_class:
+            config["state_class"] = definition.state_class
         self.publish(
-            f"{discovery_prefix}/sensor/{self.gateway_name}/{key}/config",
+            f"{discovery_prefix}/sensor/{self.gateway_name}/{definition.key}/config",
             json.dumps(config, separators=(",", ":"), ensure_ascii=False),
             retain=True,
         )
+        published_keys.add(definition.key)
     _discovery_published.add(identity)
-    logging.info("Home-Assistant-Discovery für OBIS-Sensoren veröffentlicht")
+    logging.info("Home-Assistant-Discovery für %d OBIS-Sensoren veröffentlicht", len(published_keys))
 
 
 core.telegram_payload = telegram_payload
