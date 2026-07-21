@@ -148,26 +148,12 @@ def _diagnostics_status(_: dict[str, Any]) -> dict[str, Any]:
 
 
 manager = PluginManager(bus)
-
-
-def _register(plugin: CoreModulePlugin) -> None:
-    plugin.initialize({}, bus)
-    manager._plugins[plugin.plugin_id] = plugin
-    from plugin_framework import PluginRecord
-    manager._records[plugin.plugin_id] = PluginRecord(
-        plugin_id=plugin.plugin_id,
-        name=plugin.name,
-        version=plugin.version,
-        enabled=True,
-    )
-
-
-_register(CoreModulePlugin("usb_sml", "USB-SML", _usb_status))
-_register(CoreModulePlugin("mqtt", "MQTT", _mqtt_status))
-_register(CoreModulePlugin("homeassistant", "Home Assistant", _ha_status))
-_register(CoreModulePlugin("wireguard", "WireGuard", _wireguard_status))
-_register(CoreModulePlugin("lte", "LTE", _lte_status))
-_register(CoreModulePlugin("diagnostics", "Diagnose", _diagnostics_status))
+manager.register(CoreModulePlugin("usb_sml", "USB-SML", _usb_status))
+manager.register(CoreModulePlugin("mqtt", "MQTT", _mqtt_status))
+manager.register(CoreModulePlugin("homeassistant", "Home Assistant", _ha_status))
+manager.register(CoreModulePlugin("wireguard", "WireGuard", _wireguard_status))
+manager.register(CoreModulePlugin("lte", "LTE", _lte_status))
+manager.register(CoreModulePlugin("diagnostics", "Diagnose", _diagnostics_status))
 manager.start_all()
 
 
