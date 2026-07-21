@@ -8,7 +8,6 @@ import ipaddress
 import json
 import os
 import re
-import secrets
 import subprocess
 import tempfile
 from pathlib import Path
@@ -21,11 +20,14 @@ INTERFACE_RE = re.compile(r"^[a-zA-Z0-9_=+.-]{1,15}$")
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "enabled": False,
+    "mode": "client",
     "interface": "wg0",
     "autostart": True,
     "address": "10.20.30.2/24",
     "dns": "",
     "mtu": 1420,
+    "listen_port": 51820,
+    "public_endpoint": "",
     "private_key": "",
     "public_key": "",
     "peer": {
@@ -90,7 +92,6 @@ def generate_keys() -> tuple[str, str]:
         public_key = _run(["wg", "pubkey"], private_key + "\n")
         return private_key, public_key
     except (OSError, subprocess.TimeoutExpired, ValueError):
-        # X25519-Schlüssel müssen durch wg erzeugt werden. Keine unsichere Ersatzimplementierung.
         raise ValueError("WireGuard-Schlüssel konnten nicht erzeugt werden. Ist wireguard-tools installiert?")
 
 
@@ -118,6 +119,9 @@ def validate_config(supplied: dict[str, Any], current: dict[str, Any] | None = N
     if not isinstance(supplied, dict):
         raise ValueError("Ungültige WireGuard-Konfiguration")
     current = current or load_config()
+    mode = str(supplied.get("mode", current.get("mode", "client"))).strip().lower()
+    if mode not in {"client", "server"}:
+        raise ValueError("WireGuard-Modus muss client oder server sein")
     interface = str(supplied.get("interface", "wg0")).strip()
     if not INTERFACE_RE.fullmatch(interface):
         raise ValueError("Ungültiger Tunnelname")
@@ -128,6 +132,9 @@ def validate_config(supplied: dict[str, Any], current: dict[str, Any] | None = N
     mtu = int(supplied.get("mtu", 1420))
     if mtu < 576 or mtu > 9000:
         raise ValueError("MTU muss zwischen 576 und 9000 liegen")
+    listen_port = int(supplied.get("listen_port", current.get("listen_port", 51820)))
+    if listen_port < 1 or listen_port > 65535:
+        raise ValueError("Listen-Port muss zwischen 1 und 65535 liegen")
     peer = supplied.get("peer", {})
     if not isinstance(peer, dict):
         raise ValueError("Ungültige Peer-Konfiguration")
@@ -144,18 +151,24 @@ def validate_config(supplied: dict[str, Any], current: dict[str, Any] | None = N
         private_key = _valid_key(private_key)
     if public_key:
         public_key = _valid_key(public_key)
-    peer_public = _valid_key(str(peer.get("public_key", "")), required=bool(supplied.get("enabled")))
+    peer_public = _valid_key(str(peer.get("public_key", "")), required=bool(supplied.get("enabled")) and mode == "client")
     preshared = _valid_key(str(peer.get("preshared_key", "")))
     endpoint = str(peer.get("endpoint", "")).strip()
-    if bool(supplied.get("enabled")) and (not address or not private_key or not endpoint or not allowed_ips):
-        raise ValueError("Für einen aktiven Tunnel werden Adresse, privater Schlüssel, Endpoint und AllowedIPs benötigt")
+    if bool(supplied.get("enabled")):
+        if not address or not private_key:
+            raise ValueError("Für einen aktiven Tunnel werden Adresse und privater Schlüssel benötigt")
+        if mode == "client" and (not endpoint or not allowed_ips or not peer_public):
+            raise ValueError("Im Client-Modus werden Peer-Schlüssel, Endpoint und AllowedIPs benötigt")
     return {
         "enabled": bool(supplied.get("enabled")),
+        "mode": mode,
         "interface": interface,
         "autostart": bool(supplied.get("autostart", True)),
         "address": address,
         "dns": str(supplied.get("dns", "")).strip(),
         "mtu": mtu,
+        "listen_port": listen_port,
+        "public_endpoint": str(supplied.get("public_endpoint", current.get("public_endpoint", ""))).strip(),
         "private_key": private_key,
         "public_key": public_key,
         "peer": {
@@ -182,19 +195,22 @@ def public_config(config: dict[str, Any]) -> dict[str, Any]:
 def export_conf(config: dict[str, Any]) -> str:
     peer = config.get("peer", {})
     lines = ["[Interface]", f"PrivateKey = {config.get('private_key', '')}", f"Address = {config.get('address', '')}"]
+    if config.get("mode") == "server" and config.get("listen_port"):
+        lines.append(f"ListenPort = {config.get('listen_port', 51820)}")
     if config.get("dns"):
         lines.append(f"DNS = {config['dns']}")
     if config.get("mtu"):
         lines.append(f"MTU = {config['mtu']}")
-    lines.extend(["", "[Peer]", f"PublicKey = {peer.get('public_key', '')}"])
-    if peer.get("preshared_key"):
-        lines.append(f"PresharedKey = {peer['preshared_key']}")
-    lines.extend([
-        f"Endpoint = {peer.get('endpoint', '')}",
-        f"AllowedIPs = {peer.get('allowed_ips', '')}",
-        f"PersistentKeepalive = {peer.get('persistent_keepalive', 25)}",
-        "",
-    ])
+    if config.get("mode", "client") == "client":
+        lines.extend(["", "[Peer]", f"PublicKey = {peer.get('public_key', '')}"])
+        if peer.get("preshared_key"):
+            lines.append(f"PresharedKey = {peer['preshared_key']}")
+        lines.extend([
+            f"Endpoint = {peer.get('endpoint', '')}",
+            f"AllowedIPs = {peer.get('allowed_ips', '')}",
+            f"PersistentKeepalive = {peer.get('persistent_keepalive', 25)}",
+        ])
+    lines.append("")
     return "\n".join(lines)
 
 
@@ -217,11 +233,13 @@ def import_conf(text: str) -> dict[str, Any]:
             public_key = ""
     supplied = {
         "enabled": False,
+        "mode": "client",
         "interface": "wg0",
         "autostart": True,
         "address": interface.get("Address", "").strip(),
         "dns": interface.get("DNS", "").strip(),
         "mtu": interface.getint("MTU", fallback=1420),
+        "listen_port": interface.getint("ListenPort", fallback=51820),
         "private_key": private_key,
         "public_key": public_key,
         "peer": {
