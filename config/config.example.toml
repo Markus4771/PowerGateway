@@ -1,11 +1,16 @@
 [gateway]
 name = "powergateway-01"
 log_level = "INFO"
+status_path = "/var/lib/powergateway/status.json"
+health_interval = 30
+status_interval = 30
 
 [meter]
 protocol = "sml"
 device = "auto"
 baudrate = 9600
+read_timeout = 1.0
+reconnect_interval = 10
 
 [mqtt]
 enabled = false
@@ -15,6 +20,9 @@ username = ""
 password = ""
 topic_prefix = "powergateway/powergateway-01"
 tls = false
+ca_file = ""
+homeassistant_discovery = true
+discovery_prefix = "homeassistant"
 
 [lte]
 enabled = true
@@ -28,3 +36,5 @@ interface = "wg0"
 [buffer]
 enabled = true
 path = "/var/lib/powergateway/buffer.db"
+max_messages = 10000
+flush_batch_size = 100
