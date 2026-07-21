@@ -1,0 +1,23 @@
+[Unit]
+Description=PowerGateway Weboberflaeche
+After=network.target powergateway.service
+Wants=powergateway.service
+
+[Service]
+Type=simple
+User=powergateway
+Group=powergateway
+ExecStart=/opt/powergateway/venv/bin/gunicorn --workers 2 --threads 2 --bind 0.0.0.0:8080 --access-logfile - --error-logfile - webapp:app
+WorkingDirectory=/opt/powergateway/src
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/etc/powergateway /opt/powergateway
+ReadWritePaths=/var/lib/powergateway
+
+[Install]
+WantedBy=multi-user.target
