@@ -1,0 +1,30 @@
+[gateway]
+name = "powergateway-01"
+log_level = "INFO"
+
+[meter]
+protocol = "sml"
+device = "auto"
+baudrate = 9600
+
+[mqtt]
+enabled = false
+host = "192.168.1.10"
+port = 1883
+username = ""
+password = ""
+topic_prefix = "powergateway/powergateway-01"
+tls = false
+
+[lte]
+enabled = true
+interface = "auto"
+connection_check_host = "1.1.1.1"
+
+[wireguard]
+enabled = false
+interface = "wg0"
+
+[buffer]
+enabled = true
+path = "/var/lib/powergateway/buffer.db"
