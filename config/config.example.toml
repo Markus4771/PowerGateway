@@ -43,3 +43,5 @@ flush_batch_size = 100
 enabled = true
 host = "0.0.0.0"
 port = 8080
+# Messwerte werden nach dieser Zeit in der WebGUI als möglicherweise veraltet markiert.
+stale_after_seconds = 30
