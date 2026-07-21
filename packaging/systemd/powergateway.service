@@ -7,7 +7,7 @@ Wants=network-online.target
 Type=simple
 User=powergateway
 Group=powergateway
-ExecStart=/opt/powergateway/venv/bin/python /opt/powergateway/src/powergateway.py
+ExecStart=/opt/powergateway/venv/bin/python /opt/powergateway/src/service.py
 Restart=on-failure
 RestartSec=10
 NoNewPrivileges=true
@@ -15,6 +15,7 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/var/lib/powergateway
+SupplementaryGroups=dialout
 
 [Install]
 WantedBy=multi-user.target
