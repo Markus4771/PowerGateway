@@ -5,6 +5,7 @@ from __future__ import annotations
 from flask import Response, jsonify
 
 import webapp_features as features
+import wireguard_advanced  # registriert Peer-API und erweitert die WebGUI
 from plugin_runtime import manager, module_status
 
 app = features.app
