@@ -1,0 +1,6 @@
+[Unit]
+Description=PowerGateway nach Konfigurationsaenderung neu starten
+
+[Service]
+Type=oneshot
+ExecStart=/bin/systemctl restart powergateway.service
