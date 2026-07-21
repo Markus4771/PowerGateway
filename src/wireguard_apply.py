@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from wireguard_manager import CONFIG_PATH, STATUS_PATH, export_conf, load_config, validate_config
+from wireguard_peers import peer_sections
 
 WG_DIR = Path("/etc/wireguard")
 
@@ -64,28 +65,57 @@ def collect_status(interface: str, message: str = "") -> dict[str, Any]:
         "received_bytes": 0,
         "sent_bytes": 0,
         "endpoint": "",
+        "peers": [],
         "updated_at": int(time.time()),
     }
     if ok:
         rows = output.splitlines()
-        if len(rows) > 1:
-            columns = rows[1].split("\t")
-            if len(columns) >= 8:
-                status.update({
-                    "endpoint": columns[2],
-                    "latest_handshake": int(columns[4] or 0),
-                    "received_bytes": int(columns[5] or 0),
-                    "sent_bytes": int(columns[6] or 0),
-                })
+        for row in rows[1:]:
+            columns = row.split("\t")
+            if len(columns) < 8:
+                continue
+            peer = {
+                "public_key": columns[0],
+                "endpoint": columns[2],
+                "allowed_ips": columns[3],
+                "latest_handshake": int(columns[4] or 0),
+                "received_bytes": int(columns[5] or 0),
+                "sent_bytes": int(columns[6] or 0),
+                "persistent_keepalive": int(columns[7] or 0),
+            }
+            status["peers"].append(peer)
+            status["latest_handshake"] = max(status["latest_handshake"], peer["latest_handshake"])
+            status["received_bytes"] += peer["received_bytes"]
+            status["sent_bytes"] += peer["sent_bytes"]
+            if not status["endpoint"] and peer["endpoint"]:
+                status["endpoint"] = peer["endpoint"]
+    status["peer_count"] = len(status["peers"])
     return status
 
 
+def rendered_config(config: dict[str, Any]) -> str:
+    text = export_conf(config)
+    if str(config.get("mode", "client")) == "server":
+        lines = text.splitlines()
+        peer_index = next((i for i, line in enumerate(lines) if line.strip() == "[Peer]"), len(lines))
+        interface_lines = lines[:peer_index]
+        if config.get("listen_port"):
+            insert_at = 1
+            interface_lines.insert(insert_at, f"ListenPort = {int(config.get('listen_port', 51820))}")
+        text = "\n".join(interface_lines).rstrip() + "\n" + peer_sections()
+    return text
+
+
 def apply() -> int:
+    raw_config = load_config()
     try:
-        config = validate_config(load_config())
+        config = validate_config(raw_config)
     except Exception as exc:
         write_status({"active": False, "state": "fehler", "message": str(exc), "updated_at": int(time.time())})
         return 1
+    config["mode"] = raw_config.get("mode", "client")
+    config["listen_port"] = raw_config.get("listen_port", 51820)
+    config["public_endpoint"] = raw_config.get("public_endpoint", "")
     interface = config["interface"]
     conf_path = WG_DIR / f"{interface}.conf"
     service = f"wg-quick@{interface}.service"
@@ -93,13 +123,14 @@ def apply() -> int:
         run(["systemctl", "disable", "--now", service])
         write_status(collect_status(interface, "WireGuard ist deaktiviert"))
         return 0
-    atomic_text(conf_path, export_conf(config), 0o600)
+    atomic_text(conf_path, rendered_config(config), 0o600)
     if config.get("autostart", True):
         run(["systemctl", "enable", service])
     else:
         run(["systemctl", "disable", service])
     ok, output = run(["systemctl", "restart", service], 30)
     status = collect_status(interface, output)
+    status["mode"] = config.get("mode", "client")
     if not ok:
         status.update({"active": False, "state": "fehler", "message": output or "Tunnelstart fehlgeschlagen"})
     write_status(status)
@@ -109,7 +140,9 @@ def apply() -> int:
 def status_only() -> int:
     config = load_config()
     interface = str(config.get("interface", "wg0"))
-    write_status(collect_status(interface))
+    status = collect_status(interface)
+    status["mode"] = config.get("mode", "client")
+    write_status(status)
     return 0
 
 
