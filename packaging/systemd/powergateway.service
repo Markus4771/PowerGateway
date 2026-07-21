@@ -7,13 +7,15 @@ Wants=network-online.target
 Type=simple
 User=powergateway
 Group=powergateway
-ExecStart=/opt/powergateway/venv/bin/python /opt/powergateway/src/service.py
+ExecStart=/bin/sh -c 'if [ -x /opt/powergateway/venv/bin/python ]; then exec /opt/powergateway/venv/bin/python /opt/powergateway/src/service.py; else exec /usr/bin/python3 /opt/powergateway/src/service.py; fi'
 Restart=on-failure
 RestartSec=10
+Environment=PYTHONUNBUFFERED=1
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
+ReadOnlyPaths=/etc/powergateway /opt/powergateway
 ReadWritePaths=/var/lib/powergateway
 SupplementaryGroups=dialout
 
