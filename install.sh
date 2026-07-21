@@ -20,6 +20,9 @@ if ! id powergateway >/dev/null 2>&1; then
   useradd --system --home "${DATA_DIR}" --shell /usr/sbin/nologin powergateway
 fi
 usermod -a -G dialout,plugdev powergateway
+if getent group systemd-journal >/dev/null 2>&1; then
+  usermod -a -G systemd-journal powergateway
+fi
 
 install -d -m 0755 "${INSTALL_DIR}" "${CONFIG_DIR}" /etc/wireguard
 install -d -o powergateway -g powergateway -m 0750 "${DATA_DIR}"
@@ -59,6 +62,7 @@ chmod 0755 \
   "${INSTALL_DIR}/src/webapp.py" \
   "${INSTALL_DIR}/src/webapp_runtime.py" \
   "${INSTALL_DIR}/src/webapp_features.py" \
+  "${INSTALL_DIR}/src/advanced_assistant.py" \
   "${INSTALL_DIR}/src/setup_assistant.py" \
   "${INSTALL_DIR}/src/wireguard_runtime.py" \
   "${INSTALL_DIR}/src/wireguard_apply.py" \
