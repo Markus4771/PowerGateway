@@ -1,13 +1,21 @@
 [Unit]
-Description=PowerGateway Netzwerkkonfiguration
+Description=PowerGateway Netzwerkcontroller
 After=NetworkManager.service ModemManager.service
 Wants=NetworkManager.service
 Before=powergateway.service powergateway-web.service
 
 [Service]
-Type=oneshot
-ExecStart=/bin/sh -c 'if [ -x /opt/powergateway/venv/bin/python ]; then exec /opt/powergateway/venv/bin/python /opt/powergateway/src/networkctl.py apply; else exec /usr/bin/python3 /opt/powergateway/src/networkctl.py apply; fi'
-RemainAfterExit=yes
+Type=simple
+ExecStart=/bin/sh -c 'if [ -x /opt/powergateway/venv/bin/python ]; then exec /opt/powergateway/venv/bin/python /opt/powergateway/src/networkctl.py daemon; else exec /usr/bin/python3 /opt/powergateway/src/networkctl.py daemon; fi'
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/etc/powergateway /opt/powergateway
+ReadWritePaths=/var/lib/powergateway
 
 [Install]
 WantedBy=multi-user.target
