@@ -4,16 +4,25 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+from pathlib import Path
 from typing import Any
 
 import powergateway as core
 from sml_obis import KNOWN_OBIS, decode_obis_values
 
-
+LATEST_VALUES_PATH = Path(os.environ.get("POWERGATEWAY_LATEST_VALUES", "/var/lib/powergateway/latest_values.json"))
 _original_telegram_payload = core.telegram_payload
 _original_publish_or_buffer = core.publish_or_buffer
 _original_publish_discovery = core.MqttPublisher.publish_discovery
 _discovery_published: set[str] = set()
+
+
+def _atomic_write(path: Path, data: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    temporary.replace(path)
 
 
 def telegram_payload(frame: bytes, gateway_name: str) -> dict[str, Any]:
@@ -22,6 +31,14 @@ def telegram_payload(frame: bytes, gateway_name: str) -> dict[str, Any]:
     payload["measurements"] = measurements
     payload["values"] = {item["key"]: item["value"] for item in measurements}
     if measurements:
+        latest = {
+            **payload["values"],
+            "gateway": gateway_name,
+            "received_at": payload.get("received_at"),
+            "telegram_sha256": payload.get("sha256"),
+            "measurements": measurements,
+        }
+        _atomic_write(LATEST_VALUES_PATH, latest)
         logging.info("OBIS-Werte erkannt: %s", ", ".join(item["key"] for item in measurements))
     else:
         logging.warning("SML-Telegramm enthält noch keine erkannten OBIS-Werte")
@@ -73,7 +90,7 @@ def publish_discovery(self: core.MqttPublisher) -> None:
         "name": self.gateway_name,
         "manufacturer": "PowerGateway",
         "model": "Raspberry Pi Meter Gateway",
-        "sw_version": "0.3.0-dev",
+        "sw_version": "0.4.0-dev",
     }
     for obis, (key, name, unit, state_class) in KNOWN_OBIS.items():
         device_class = {
