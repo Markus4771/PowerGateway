@@ -6,36 +6,22 @@ health_interval = 30
 status_interval = 30
 
 [meter]
-# Datenquelle: "usb_sml", "simulation" oder "tasmota_mqtt".
+# Datenquellen: "usb_sml", "tasmota_mqtt" oder "simulation".
 source = "usb_sml"
 protocol = "sml"
 device = "auto"
 baudrate = 9600
 read_timeout = 1.0
 reconnect_interval = 10
-# Verfügbare Simulationsprofile: generic, emh, easymeter, iskra, kaifa, solar, unknown
 simulation_profile = "generic"
 simulation_interval = 5.0
 simulation_seed = 4771
 
 [meter.tasmota]
-# Der Tasmota-Lesekopf sendet seine Werte an diesen MQTT-Broker.
-# Ohne abweichende Angaben werden Host, Port und Zugangsdaten aus [mqtt] übernommen.
 topic = "tele/Stromzaehler/SENSOR"
-client_id = "powergateway-tasmota-source"
-qos = 0
-read_timeout = 2.0
-# JSON-Pfade passend zum vorhandenen Tasmota-Script.
 power_path = "Home.Power_curr"
 energy_import_path = "Home.total_in"
 energy_export_path = ""
-voltage_l1_path = ""
-voltage_l2_path = ""
-voltage_l3_path = ""
-current_l1_path = ""
-current_l2_path = ""
-current_l3_path = ""
-frequency_path = ""
 
 [mqtt]
 enabled = false
@@ -49,10 +35,43 @@ ca_file = ""
 homeassistant_discovery = true
 discovery_prefix = "homeassistant"
 
-[lte]
+[network]
+# Reihenfolge für automatisches Fallback. Der erste verfügbare Zugang gewinnt.
+priority = ["lan", "wifi", "lte"]
+apply_priorities_on_start = true
+connection_check_host = "1.1.1.1"
+
+[network.lan]
 enabled = true
 interface = "auto"
-connection_check_host = "1.1.1.1"
+# Optional Name des NetworkManager-Verbindungsprofils, z. B. "Kabelgebundene Verbindung 1".
+connection = ""
+dhcp = true
+address = ""
+gateway = ""
+dns = []
+
+[network.wifi]
+enabled = true
+interface = "auto"
+# Bereits vorhandenes NetworkManager-Profil. SSID/Passwort werden später über die WebGUI gesetzt.
+connection = "PowerGateway-WLAN"
+ssid = ""
+password = ""
+dhcp = true
+address = ""
+gateway = ""
+dns = []
+
+[network.lte]
+enabled = true
+interface = "auto"
+connection = "PowerGateway-LTE"
+apn = "internet"
+username = ""
+password = ""
+pin = ""
+roaming = false
 
 [wireguard]
 enabled = false
