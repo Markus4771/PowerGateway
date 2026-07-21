@@ -1,5 +1,19 @@
 # Änderungsprotokoll
 
+## 0.9.8-dev – 2026-07-21
+
+- USB-SML-Verbindungstest in der WebGUI ergänzt
+- automatische Prüfung üblicher Baudratenprofile vorbereitet
+- vollständige SML-Frames werden erkannt und ausgewertet
+- erkannte Messwerte und unbekannte OBIS-Kennzahlen werden im Test angezeigt
+- verständliche Fehlermeldungen für fehlende Geräte, Rechte und Telegramme ergänzt
+- Home-Assistant-Discovery-Vorschau ergänzt
+- Discovery kann manuell veröffentlicht oder gelöscht werden
+- Availability wird beim manuellen Veröffentlichen gesetzt
+- Status der PowerGateway-Dienste wird in der WebGUI angezeigt
+- Journal-Protokolle können über die Diagnoseoberfläche gelesen werden
+- Installer ergänzt den Dienstbenutzer um Journal-Leserechte, sofern verfügbar
+
 ## 0.9.7-dev – 2026-07-21
 
 - MQTT-Assistent ergänzt
