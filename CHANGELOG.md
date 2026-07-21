@@ -1,18 +1,25 @@
 # Änderungsprotokoll
 
+## 0.3.0-dev – 2026-07-21
+
+- modulare SML-/OBIS-Auswertung ergänzt
+- bekannte OBIS-Kennzahlen für Bezug, Einspeisung, Leistung, Spannung, Strom und Frequenz definiert
+- Skalierung und Einheiten der Messwerte werden normiert
+- Energieangaben werden für Home Assistant von Wh nach kWh umgerechnet
+- Messwerte werden zusätzlich unter `meter/values` veröffentlicht
+- Home-Assistant-Discovery für Zähler- und Phasensensoren ergänzt
+- eigenständiges Werkzeug `scripts/decode_sml.py` zum Prüfen aufgezeichneter Telegramme ergänzt
+- automatisierte Tests für bekannte und unbekannte OBIS-Werte ergänzt
+- modularer Dienststarter `src/service.py` aktiviert
+
 ## 0.2.0-dev – 2026-07-21
 
-- SML-Transportframes vom USB-IR-Lesekopf erkennen und vollständig erfassen
-- MQTT-Client mit TLS-Option und Last-Will-Verfügbarkeit ergänzen
-- automatische Home-Assistant-MQTT-Discovery für Gateway-Statussensoren ergänzen
-- Rohtelegramme mit Zeitstempel, Länge und SHA-256-Prüfsumme veröffentlichen
-- SQLite-Puffer für LTE-, Internet- und MQTT-Ausfälle implementieren
-- automatisches Nachsenden gepufferter Nachrichten ergänzen
-- LTE-Diagnose über ModemManager und WireGuard-Status ergänzen
-- atomare JSON-Statusdatei für Diagnose und spätere Weboberfläche ergänzen
-- Installationsskript um Python-Abhängigkeiten und Benutzergruppen erweitern
-- Hardware- und Dienstdiagnoseskript ergänzen
-- automatisierte SML- und Puffertests sowie GitHub Actions hinzufügen
+- serielle SML-Rahmenerkennung implementiert
+- MQTT-Publisher und Home-Assistant-Discovery ergänzt
+- Offline-Pufferung mit SQLite und automatisches Nachsenden umgesetzt
+- LTE- und WireGuard-Statusprüfung ergänzt
+- maschinenlesbare Statusdatei und Diagnoseskript ergänzt
+- automatisierte Tests und GitHub-Actions-Workflow ergänzt
 
 ## 0.1.0-dev – 2026-07-21
 
