@@ -38,3 +38,8 @@ enabled = true
 path = "/var/lib/powergateway/buffer.db"
 max_messages = 10000
 flush_batch_size = 100
+
+[web]
+enabled = true
+host = "0.0.0.0"
+port = 8080
