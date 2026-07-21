@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import glob
-import json
 import os
 import platform
 import shutil
 import socket
 from pathlib import Path
 from typing import Any
+
+from setup_wizard import build_wizard_state
 
 
 def serial_devices() -> list[dict[str, str]]:
@@ -30,7 +31,9 @@ def setup_check(application: dict[str, Any], network: dict[str, Any], status: di
         {"id": "homeassistant", "label": "Home Assistant", "ok": not bool(mqtt_config.get("homeassistant_discovery")) or bool(mqtt_config.get("host"))},
         {"id": "wireguard", "label": "WireGuard", "ok": not bool(wireguard.get("enabled")) or bool(wireguard.get("peer", {}).get("endpoint"))},
     ]
-    return {"complete": all(item["ok"] for item in items[:5]), "items": items}
+    result = {"complete": all(item["ok"] for item in items[:5]), "items": items}
+    result["wizard"] = build_wizard_state(application, network, status, wireguard, Path(__file__).resolve().parents[1] / "version.txt")
+    return result
 
 
 def diagnostics() -> dict[str, Any]:
