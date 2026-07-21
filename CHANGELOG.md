@@ -1,5 +1,15 @@
 # Änderungsprotokoll
 
+## 0.9.10-dev – 2026-07-21
+
+- internes thread-sicheres Ereignissystem ergänzt
+- konfigurationsbasierte Plugin-Grundlage mit Lebenszyklus, Status und Diagnose ergänzt
+- Pluginfehler werden vom Kern isoliert und stoppen den Hauptdienst nicht
+- modularen Einrichtungsassistenten mit fester Schrittfolge ergänzt
+- Fortschritt, aktueller Schritt, Pflicht- und optionale Schritte werden maschinenlesbar geliefert
+- Versionsanzeige des Einrichtungsassistenten wird zentral aus `version.txt` gelesen
+- bestehender Einrichtungsstatus liefert zusätzlich den neuen Wizard-Zustand
+
 ## 0.9.9-dev – 2026-07-21
 
 - Entwicklungsversion auf 0.9.9-dev erhöht
@@ -78,10 +88,3 @@
 - LTE- und WireGuard-Statusprüfung ergänzt
 - maschinenlesbare Statusdatei und Diagnoseskript ergänzt
 - automatisierte Tests und GitHub-Actions-Workflow ergänzt
-
-## 0.1.0-dev – 2026-07-21
-
-- Projekt PowerGateway initialisiert
-- Zielhardware Raspberry Pi 3B+, USB-IR-Lesekopf und LTE festgelegt
-- Projekt- und Installationsstruktur begonnen
-- Konfigurations- und Dienstgrundlage vorbereitet
