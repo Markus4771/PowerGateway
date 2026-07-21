@@ -20,14 +20,14 @@ PowerGateway ist ein schlankes Raspberry-Pi-Gateway zum Auslesen eines digitalen
 - LTE-Status und automatische Wiederverbindung
 - optionale WireGuard-Anbindung
 - lokale Pufferung bei Verbindungsunterbrechungen
-- lokale Weboberfläche für Status, Diagnose und Konfiguration
+- lokale, schreibgeschützte Weboberfläche für Status und Diagnose
 - systemd-Dienste und Vorbereitung eines Debian-Pakets
 
 ## Bewusst nicht enthalten
 
 PowerGateway soll als spezialisiertes, wartungsarmes Gateway schlank bleiben. Daher sind folgende Funktionen nicht Bestandteil des Projekts:
 
-- keine REST-API
+- keine öffentliche REST-API
 - keine automatischen Softwareupdates
 - keine integrierte Backup- oder Wiederherstellungsfunktion
 
@@ -35,7 +35,20 @@ Softwareaktualisierungen erfolgen später kontrolliert über ein neues Debian-Pa
 
 ## Aktueller Stand
 
-Version `0.5.0-dev` – erweiterte OBIS-Engine und Home-Assistant-Discovery.
+Version `0.6.0-dev` – ausgebaute Weboberfläche auf Basis der OBIS-Engine aus Version 0.5.
+
+Die Weboberfläche zeigt:
+
+- Verbindung zum Stromzähler
+- aktuelle Leistung, Energiebezug und Einspeisung
+- MQTT-, Internet-, LTE- und WireGuard-Status
+- Telegrammzähler und Größe des Offline-Puffers
+- Alter des letzten Telegramms und Warnung bei veralteten Messwerten
+- alle dekodierten Messwerte mit Einheit, OBIS-Kennung und Qualität
+- maskierte, schreibgeschützte Konfigurationsübersicht
+- Systemdiagnose für Dienste, LTE, WireGuard und serielle Geräte
+
+Die Browserdaten unter `/_internal` dienen ausschließlich der Weboberfläche und sind keine öffentliche Programmierschnittstelle.
 
 Die OBIS-Engine unterstützt unter anderem:
 
@@ -60,8 +73,14 @@ Anschließend die Konfiguration bearbeiten:
 
 ```bash
 sudo nano /etc/powergateway/config.toml
-sudo systemctl restart powergateway
+sudo systemctl restart powergateway powergateway-web
 sudo journalctl -u powergateway -f
+```
+
+Die Weboberfläche ist standardmäßig erreichbar unter:
+
+```text
+http://IP-DES-RASPBERRY-PI:8080
 ```
 
 ## Verzeichnisse nach der Installation
