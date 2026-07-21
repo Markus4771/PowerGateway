@@ -1,0 +1,9 @@
+[Unit]
+Description=PowerGateway WebGUI-Konfiguration ueberwachen
+
+[Path]
+PathChanged=/var/lib/powergateway/application_config.json
+Unit=powergateway-config-reload.service
+
+[Install]
+WantedBy=multi-user.target
