@@ -69,8 +69,7 @@ def collect_status(interface: str, message: str = "") -> dict[str, Any]:
         "updated_at": int(time.time()),
     }
     if ok:
-        rows = output.splitlines()
-        for row in rows[1:]:
+        for row in output.splitlines()[1:]:
             columns = row.split("\t")
             if len(columns) < 8:
                 continue
@@ -96,13 +95,7 @@ def collect_status(interface: str, message: str = "") -> dict[str, Any]:
 def rendered_config(config: dict[str, Any]) -> str:
     text = export_conf(config)
     if str(config.get("mode", "client")) == "server":
-        lines = text.splitlines()
-        peer_index = next((i for i, line in enumerate(lines) if line.strip() == "[Peer]"), len(lines))
-        interface_lines = lines[:peer_index]
-        if config.get("listen_port"):
-            insert_at = 1
-            interface_lines.insert(insert_at, f"ListenPort = {int(config.get('listen_port', 51820))}")
-        text = "\n".join(interface_lines).rstrip() + "\n" + peer_sections()
+        text = text.rstrip() + "\n" + peer_sections()
     return text
 
 
@@ -113,9 +106,6 @@ def apply() -> int:
     except Exception as exc:
         write_status({"active": False, "state": "fehler", "message": str(exc), "updated_at": int(time.time())})
         return 1
-    config["mode"] = raw_config.get("mode", "client")
-    config["listen_port"] = raw_config.get("listen_port", 51820)
-    config["public_endpoint"] = raw_config.get("public_endpoint", "")
     interface = config["interface"]
     conf_path = WG_DIR / f"{interface}.conf"
     service = f"wg-quick@{interface}.service"
