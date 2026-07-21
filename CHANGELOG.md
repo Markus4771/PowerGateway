@@ -1,16 +1,48 @@
 # Änderungsprotokoll
 
+## 0.9.7-dev – 2026-07-21
+
+- MQTT-Assistent ergänzt
+- echte MQTT-Anmeldung mit Benutzername und Passwort
+- TLS- und CA-Unterstützung
+- Topic-Erkennung über abonnierte MQTT-Nachrichten
+- Live-Nachrichten und JSON-Vorschau
+- automatische Vorschläge für Leistung, Bezug und Einspeisung
+- vollständige GitHub-Dokumentationsstruktur begonnen
+- README, Roadmap, Installations- und Konfigurationsanleitungen aktualisiert
+- Projektkontext und Einstieg für neue Chats ergänzt
+- festgelegt, dass Diagramme und Langzeitauswertungen in Home Assistant erfolgen
+
+## 0.9.6-dev – 2026-07-21
+
+- Einrichtungsstatus in der WebGUI ergänzt
+- USB-SML-Geräteerkennung ergänzt
+- Hardware- und Systemdiagnose ergänzt
+- Einrichtungs- und Diagnosemodule in Installer und WebGUI eingebunden
+
+## 0.9.5-dev – 2026-07-21
+
+- WireGuard-Konfiguration, Anwendung und Statusdienst ergänzt
+- WireGuard-Weboberfläche eingebunden
+- systemd-Dienste und Installer erweitert
+
+## 0.8.0-dev – 2026-07-21
+
+- modulares Datenquellen-Framework
+- USB-SML, Simulation und Tasmota MQTT als Quellen
+- Laufzeitkonfiguration und WebGUI erweitert
+- Netzwerkverwaltung für LAN, WLAN, LTE und Hotspot
+- einfache Benutzerverwaltung und Ersteinrichtung
+
 ## 0.3.0-dev – 2026-07-21
 
 - modulare SML-/OBIS-Auswertung ergänzt
 - bekannte OBIS-Kennzahlen für Bezug, Einspeisung, Leistung, Spannung, Strom und Frequenz definiert
-- Skalierung und Einheiten der Messwerte werden normiert
-- Energieangaben werden für Home Assistant von Wh nach kWh umgerechnet
-- Messwerte werden zusätzlich unter `meter/values` veröffentlicht
+- Skalierung und Einheiten der Messwerte normiert
+- Energieangaben für Home Assistant von Wh nach kWh umgerechnet
 - Home-Assistant-Discovery für Zähler- und Phasensensoren ergänzt
-- eigenständiges Werkzeug `scripts/decode_sml.py` zum Prüfen aufgezeichneter Telegramme ergänzt
+- Werkzeug `scripts/decode_sml.py` zum Prüfen aufgezeichneter Telegramme ergänzt
 - automatisierte Tests für bekannte und unbekannte OBIS-Werte ergänzt
-- modularer Dienststarter `src/service.py` aktiviert
 
 ## 0.2.0-dev – 2026-07-21
 
@@ -24,6 +56,6 @@
 ## 0.1.0-dev – 2026-07-21
 
 - Projekt PowerGateway initialisiert
-- Zielhardware Raspberry Pi 3B+, USB-IR-Lesekopf und ZTE MF833 festgelegt
+- Zielhardware Raspberry Pi 3B+, USB-IR-Lesekopf und LTE festgelegt
 - Projekt- und Installationsstruktur begonnen
 - Konfigurations- und Dienstgrundlage vorbereitet
