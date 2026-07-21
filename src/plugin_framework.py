@@ -37,6 +37,20 @@ class PluginManager:
         self._plugins: dict[str, Plugin] = {}
         self._records: dict[str, PluginRecord] = {}
 
+    def register(self, plugin: Plugin, config: dict[str, Any] | None = None, *, enabled: bool = True) -> None:
+        """Registriert ein Plugin über die öffentliche Manager-Schnittstelle."""
+        if plugin.plugin_id in self._plugins:
+            raise ValueError(f"Plugin bereits registriert: {plugin.plugin_id}")
+        plugin.initialize(dict(config or {}), self.events)
+        self._plugins[plugin.plugin_id] = plugin
+        self._records[plugin.plugin_id] = PluginRecord(
+            plugin_id=plugin.plugin_id,
+            name=plugin.name,
+            version=plugin.version,
+            enabled=enabled,
+        )
+        self.events.publish("plugin.loaded", {"plugin_id": plugin.plugin_id}, "plugin-manager")
+
     def load_from_config(self, definitions: list[dict[str, Any]]) -> None:
         for definition in definitions:
             if not definition.get("enabled", True):
@@ -48,15 +62,7 @@ class PluginManager:
             try:
                 plugin_class = getattr(import_module(module_name), class_name)
                 plugin: Plugin = plugin_class()
-                plugin.initialize(dict(definition.get("config") or {}), self.events)
-                self._plugins[plugin.plugin_id] = plugin
-                self._records[plugin.plugin_id] = PluginRecord(
-                    plugin_id=plugin.plugin_id,
-                    name=plugin.name,
-                    version=plugin.version,
-                    enabled=True,
-                )
-                self.events.publish("plugin.loaded", {"plugin_id": plugin.plugin_id}, "plugin-manager")
+                self.register(plugin, dict(definition.get("config") or {}))
             except Exception as exc:  # Pluginfehler dürfen den Kern nicht stoppen.
                 key = module_name or "unknown"
                 self._records[key] = PluginRecord(key, key, "unknown", True, "error", str(exc))
