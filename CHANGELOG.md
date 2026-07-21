@@ -1,5 +1,17 @@
 # Änderungsprotokoll
 
+## 0.9.9-dev – 2026-07-21
+
+- Entwicklungsversion auf 0.9.9-dev erhöht
+- sicheres Deinstallationsskript ergänzt
+- Standard-Deinstallation behält Konfiguration und Betriebsdaten
+- vollständige Entfernung über `uninstall.sh --purge` ergänzt
+- Debian-Paketbau über `packaging/build_deb.sh` vorbereitet
+- Paket-Metadaten, Abhängigkeiten und Maintainer-Skripte ergänzt
+- bestehende Konfiguration wird bei Paketupdates erhalten
+- systemd-Dienste werden durch das Debian-Paket eingerichtet und verwaltet
+- Anleitung für Paketbau, Installation, Update und Deinstallation ergänzt
+
 ## 0.9.8-dev – 2026-07-21
 
 - USB-SML-Verbindungstest in der WebGUI ergänzt
