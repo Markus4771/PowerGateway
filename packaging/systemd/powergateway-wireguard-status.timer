@@ -1,0 +1,11 @@
+[Unit]
+Description=PowerGateway WireGuard-Status regelmäßig aktualisieren
+
+[Timer]
+OnBootSec=20s
+OnUnitActiveSec=30s
+AccuracySec=5s
+Unit=powergateway-wireguard-status.service
+
+[Install]
+WantedBy=timers.target
