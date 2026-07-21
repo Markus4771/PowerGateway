@@ -58,6 +58,8 @@ chmod 0755 \
   "${INSTALL_DIR}/src/service_runtime.py" \
   "${INSTALL_DIR}/src/webapp.py" \
   "${INSTALL_DIR}/src/webapp_runtime.py" \
+  "${INSTALL_DIR}/src/webapp_features.py" \
+  "${INSTALL_DIR}/src/setup_assistant.py" \
   "${INSTALL_DIR}/src/wireguard_runtime.py" \
   "${INSTALL_DIR}/src/wireguard_apply.py" \
   "${INSTALL_DIR}/src/networkctl.py"
