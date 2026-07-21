@@ -1,5 +1,18 @@
 # Änderungsprotokoll
 
+## 0.9.11-dev – 2026-07-22
+
+- WireGuard-Zentrale mit Server- und Client-Modus vervollständigt
+- mehrere Peers mit Aktivieren, Deaktivieren, Bearbeiten und Löschen
+- automatische freie IPv4-Adresse für neue Clients
+- Peer-Gruppen, Beschreibungen und optionale Ablaufdaten ergänzt
+- abgelaufene Peers werden nicht mehr in die aktive Serverkonfiguration übernommen
+- doppelte öffentliche Schlüssel werden verhindert
+- fertige Client-Konfigurationen und QR-Codes erzeugbar
+- Live-Status je Peer mit Online/Offline, letztem Handshake sowie RX/TX ergänzt
+- lokale Diagnose für Werkzeuge, Schlüssel, Tunnelstatus, Routing, IP-Forwarding, DNS, Systemdienst und Handshake ergänzt
+- Versionsstand auf 0.9.11-dev erhöht
+
 ## 0.9.10-dev – 2026-07-21
 
 - internes thread-sicheres Ereignissystem ergänzt
