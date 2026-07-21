@@ -19,7 +19,14 @@ mkdir -p \
 
 cp -a "${ROOT_DIR}/src" "${BUILD_ROOT}/opt/powergateway/src"
 cp -a "${ROOT_DIR}/requirements.txt" "${ROOT_DIR}/version.txt" "${BUILD_ROOT}/opt/powergateway/"
-cp -a "${ROOT_DIR}/config/config.example.toml" "${BUILD_ROOT}/etc/powergateway/config.example.toml"
+
+# Die Konfigurationsvorlage muss als echte conffile im Paket vorhanden sein.
+# dpkg erhält diese Datei bei Updates und fragt bei lokalen Änderungen nach.
+install -m 0640 "${ROOT_DIR}/config/config.example.toml" \
+  "${BUILD_ROOT}/etc/powergateway/config.toml"
+install -m 0644 "${ROOT_DIR}/config/config.example.toml" \
+  "${BUILD_ROOT}/etc/powergateway/config.example.toml"
+
 cp -a "${ROOT_DIR}/packaging/systemd/." "${BUILD_ROOT}/etc/systemd/system/"
 cp -a "${ROOT_DIR}/README.md" "${ROOT_DIR}/CHANGELOG.md" "${BUILD_ROOT}/usr/share/doc/powergateway/"
 
@@ -51,10 +58,8 @@ usermod -a -G dialout,plugdev powergateway || true
 getent group systemd-journal >/dev/null && usermod -a -G systemd-journal powergateway || true
 install -d -o powergateway -g powergateway -m 0750 /var/lib/powergateway
 install -d -m 0750 -o root -g powergateway /etc/powergateway
-
-if [[ ! -f /etc/powergateway/config.toml ]]; then
-  install -m 0640 -o root -g powergateway /etc/powergateway/config.example.toml /etc/powergateway/config.toml
-fi
+chown root:powergateway /etc/powergateway/config.toml /etc/powergateway/config.example.toml 2>/dev/null || true
+chmod 0640 /etc/powergateway/config.toml 2>/dev/null || true
 
 python3 -m venv /opt/powergateway/venv
 /opt/powergateway/venv/bin/pip install --disable-pip-version-check --no-cache-dir -r /opt/powergateway/requirements.txt
