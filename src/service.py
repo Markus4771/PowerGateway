@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
-"""PowerGateway service bootstrap with modular SML/OBIS decoding."""
+"""PowerGateway service bootstrap with modular meter sources and OBIS decoding."""
 from __future__ import annotations
 
 import json
 import logging
 import os
+import signal
+import time
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
 import powergateway as core
+from meter_sources import MeterReading, TasmotaMqttSource
 from simulator import SimulatedSerial, SmlSimulator
 from sml_obis import OBIS_REGISTRY, decode_obis_values
 
@@ -21,8 +25,6 @@ LATEST_VALUES_PATH = Path(os.environ.get("POWERGATEWAY_LATEST_VALUES", "/var/lib
 _original_telegram_payload = core.telegram_payload
 _original_publish_or_buffer = core.publish_or_buffer
 _original_publish_discovery = core.MqttPublisher.publish_discovery
-_original_resolve_meter_device = core.resolve_meter_device
-_original_serial = core.serial.Serial
 _discovery_published: set[str] = set()
 _simulator: SmlSimulator | None = None
 
@@ -34,18 +36,22 @@ def _atomic_write(path: Path, data: dict[str, Any]) -> None:
     temporary.replace(path)
 
 
-def _simulation_config() -> dict[str, Any]:
+def _load_config() -> dict[str, Any]:
+    with core.CONFIG_PATH.open("rb") as handle:
+        return tomllib.load(handle)
+
+
+def _meter_config() -> dict[str, Any]:
     try:
-        with core.CONFIG_PATH.open("rb") as handle:
-            return tomllib.load(handle).get("meter", {})
+        return _load_config().get("meter", {})
     except (OSError, ValueError):
         return {}
 
 
 def enable_simulation_if_configured() -> bool:
     global _simulator
-    meter = _simulation_config()
-    if str(meter.get("mode", "serial")).lower() != "simulation":
+    meter = _meter_config()
+    if str(meter.get("source", meter.get("mode", "serial"))).lower() != "simulation":
         return False
 
     profile = str(meter.get("simulation_profile", "generic"))
@@ -75,12 +81,14 @@ def telegram_payload(frame: bytes, gateway_name: str) -> dict[str, Any]:
     payload["measurements"] = measurements
     payload["values"] = {item["key"]: item["value"] for item in measurements}
     payload["unknown_obis"] = [item["obis"] for item in measurements if not item.get("known", True)]
+    payload["source"] = "simulation" if _simulator is not None else "usb_sml"
     payload["simulation"] = _simulator is not None
     payload["simulation_profile"] = _simulator.profile_key if _simulator else None
     if measurements:
         latest = {
             **payload["values"],
             "gateway": gateway_name,
+            "source": payload["source"],
             "received_at": payload.get("received_at"),
             "telegram_sha256": payload.get("sha256"),
             "measurements": measurements,
@@ -114,6 +122,7 @@ def publish_or_buffer(
             return
         state = {
             **values,
+            "source": decoded.get("source", "usb_sml"),
             "received_at": decoded.get("received_at"),
             "telegram_sha256": decoded.get("sha256"),
             "measurements": measurements,
@@ -144,8 +153,8 @@ def publish_discovery(self: core.MqttPublisher) -> None:
         "identifiers": [self.gateway_name],
         "name": self.gateway_name,
         "manufacturer": "PowerGateway",
-        "model": "Raspberry Pi Meter Gateway",
-        "sw_version": "0.7.0-dev",
+        "model": "Modulares Meter Gateway",
+        "sw_version": "0.8.0-dev",
     }
     published_keys: set[str] = set()
     for obis, definition in OBIS_REGISTRY.items():
@@ -160,8 +169,6 @@ def publish_discovery(self: core.MqttPublisher) -> None:
             "payload_available": "online",
             "payload_not_available": "offline",
             "device": device,
-            "json_attributes_topic": f"{self.topic_prefix}/meter/values",
-            "json_attributes_template": "{{ {'obis': '" + obis + "'} | tojson }}",
         }
         if definition.unit:
             config["unit_of_measurement"] = definition.unit
@@ -176,7 +183,91 @@ def publish_discovery(self: core.MqttPublisher) -> None:
         )
         published_keys.add(definition.key)
     _discovery_published.add(identity)
-    logging.info("Home-Assistant-Discovery für %d OBIS-Sensoren veröffentlicht", len(published_keys))
+    logging.info("Home-Assistant-Discovery für %d Messwertsensoren veröffentlicht", len(published_keys))
+
+
+def _normalise_tasmota_reading(reading: MeterReading, gateway_name: str) -> dict[str, Any]:
+    return {
+        **reading.values,
+        "gateway": gateway_name,
+        "source": reading.source,
+        "received_at": reading.received_at,
+        "simulation": False,
+        "raw": reading.raw,
+    }
+
+
+def run_tasmota_source(config: dict[str, Any]) -> int:
+    gateway_config = config.get("gateway", {})
+    meter_config = config.get("meter", {})
+    source_config = dict(config.get("mqtt", {}))
+    source_config.update(meter_config.get("tasmota", {}))
+    logging.basicConfig(
+        level=getattr(logging, str(gateway_config.get("log_level", "INFO")).upper(), logging.INFO),
+        format="%(asctime)s %(levelname)s %(message)s",
+    )
+    signal.signal(signal.SIGTERM, core.stop_service)
+    signal.signal(signal.SIGINT, core.stop_service)
+
+    gateway_name = str(gateway_config.get("name", "powergateway"))
+    status_path = Path(str(gateway_config.get("status_path", "/var/lib/powergateway/status.json")))
+    buffer_config = config.get("buffer", {})
+    message_buffer = core.MessageBuffer(str(buffer_config.get("path", "/var/lib/powergateway/buffer.db")))
+    publisher = core.MqttPublisher(config.get("mqtt", {}), gateway_name)
+    source = TasmotaMqttSource(source_config)
+    status = core.GatewayStatus(version="0.8.0-dev", started_at=core.utc_now(), updated_at=core.utc_now())
+    status.meter_device = source.device_name
+    next_health_check = 0.0
+    next_status_publish = 0.0
+
+    publisher.start()
+    source.start()
+    logging.info("PowerGateway 0.8.0-dev startet mit Datenquelle tasmota_mqtt")
+    try:
+        while core.RUNNING:
+            now = time.monotonic()
+            if now >= next_health_check:
+                check_host = str(config.get("lte", {}).get("connection_check_host", "1.1.1.1"))
+                status.internet_online = core.internet_available(check_host)
+                status.lte_state, status.lte_signal = core.get_lte_status()
+                wg_config = config.get("wireguard", {})
+                status.wireguard_state = core.get_wireguard_status(
+                    str(wg_config.get("interface", "wg0")), bool(wg_config.get("enabled", False))
+                )
+                next_health_check = now + float(gateway_config.get("health_interval", 30))
+
+            status.mqtt_connected = publisher.connected
+            status.meter_connected = source.connected
+            if publisher.connected:
+                publisher.publish_discovery()
+                core.flush_buffer(publisher, message_buffer, int(buffer_config.get("flush_batch_size", 100)))
+
+            reading = source.read()
+            if reading is not None:
+                values_payload = _normalise_tasmota_reading(reading, gateway_name)
+                _atomic_write(LATEST_VALUES_PATH, values_payload)
+                encoded = json.dumps(values_payload, separators=(",", ":"), ensure_ascii=False)
+                _original_publish_or_buffer(
+                    publisher, message_buffer, f"{publisher.topic_prefix}/meter/values", encoded
+                )
+                status.telegram_count += 1
+                status.last_telegram_at = reading.received_at
+                status.last_telegram_sha256 = None
+                status.last_error = None
+                logging.info("Tasmota-Messwerte empfangen: %s", ", ".join(reading.values))
+
+            message_buffer.trim(int(buffer_config.get("max_messages", 10000)))
+            status.buffered_messages = message_buffer.count()
+            status.updated_at = core.utc_now()
+            core.atomic_write_json(status_path, asdict(status))
+            if now >= next_status_publish:
+                publisher.publish(f"{publisher.topic_prefix}/status", json.dumps(asdict(status)), retain=True)
+                next_status_publish = now + float(gateway_config.get("status_interval", 30))
+    finally:
+        source.stop()
+        publisher.stop()
+        logging.info("PowerGateway beendet")
+    return 0
 
 
 core.telegram_payload = telegram_payload
@@ -185,5 +276,13 @@ core.MqttPublisher.publish_discovery = publish_discovery
 
 
 if __name__ == "__main__":
-    enable_simulation_if_configured()
-    raise SystemExit(core.main())
+    try:
+        configuration = _load_config()
+        source_name = str(configuration.get("meter", {}).get("source", configuration.get("meter", {}).get("mode", "serial"))).lower()
+        if source_name in {"tasmota", "tasmota_mqtt", "wifi_tasmota"}:
+            raise SystemExit(run_tasmota_source(configuration))
+        enable_simulation_if_configured()
+        raise SystemExit(core.main())
+    except Exception:
+        logging.exception("PowerGateway konnte nicht gestartet werden")
+        raise SystemExit(1)
