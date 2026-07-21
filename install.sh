@@ -10,9 +10,7 @@ PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="/opt/powergateway"
 CONFIG_DIR="/etc/powergateway"
 DATA_DIR="/var/lib/powergateway"
-SERVICE_FILE="/etc/systemd/system/powergateway.service"
-WEB_SERVICE_FILE="/etc/systemd/system/powergateway-web.service"
-NETWORK_SERVICE_FILE="/etc/systemd/system/powergateway-network.service"
+SYSTEMD_DIR="/etc/systemd/system"
 
 echo "Installiere Systempakete ..."
 apt-get update
@@ -34,32 +32,30 @@ python3 -m venv "${INSTALL_DIR}/venv"
 "${INSTALL_DIR}/venv/bin/pip" install -r "${PROJECT_DIR}/requirements.txt"
 
 if [[ ! -f "${CONFIG_DIR}/config.toml" ]]; then
-  install -m 0640 -o root -g powergateway \
-    "${PROJECT_DIR}/config/config.example.toml" \
-    "${CONFIG_DIR}/config.toml"
+  install -m 0640 -o root -g powergateway "${PROJECT_DIR}/config/config.example.toml" "${CONFIG_DIR}/config.toml"
 else
   echo "Vorhandene Konfiguration bleibt erhalten."
-  install -m 0640 -o root -g powergateway \
-    "${PROJECT_DIR}/config/config.example.toml" \
-    "${CONFIG_DIR}/config.example.toml"
+  install -m 0640 -o root -g powergateway "${PROJECT_DIR}/config/config.example.toml" "${CONFIG_DIR}/config.example.toml"
 fi
 
-install -m 0644 "${PROJECT_DIR}/packaging/systemd/powergateway.service" "${SERVICE_FILE}"
-install -m 0644 "${PROJECT_DIR}/packaging/systemd/powergateway-web.service" "${WEB_SERVICE_FILE}"
-install -m 0644 "${PROJECT_DIR}/packaging/systemd/powergateway-network.service" "${NETWORK_SERVICE_FILE}"
+for unit in powergateway.service powergateway-web.service powergateway-network.service powergateway-config-reload.service powergateway-config-reload.path; do
+  install -m 0644 "${PROJECT_DIR}/packaging/systemd/${unit}" "${SYSTEMD_DIR}/${unit}"
+done
 
 chown -R root:root "${INSTALL_DIR}"
-chmod 0755 "${INSTALL_DIR}/src/powergateway.py" "${INSTALL_DIR}/src/service.py" "${INSTALL_DIR}/src/webapp.py" "${INSTALL_DIR}/src/networkctl.py"
+chmod 0755 "${INSTALL_DIR}/src/powergateway.py" "${INSTALL_DIR}/src/service.py" "${INSTALL_DIR}/src/service_runtime.py" "${INSTALL_DIR}/src/webapp.py" "${INSTALL_DIR}/src/webapp_runtime.py" "${INSTALL_DIR}/src/networkctl.py"
 chown powergateway:powergateway "${DATA_DIR}"
 
 systemctl daemon-reload
-systemctl enable powergateway-network.service powergateway.service powergateway-web.service
+systemctl enable powergateway-network.service powergateway.service powergateway-web.service powergateway-config-reload.path
 systemctl restart powergateway-network.service
 systemctl restart powergateway.service powergateway-web.service
+systemctl restart powergateway-config-reload.path
 
 echo
 echo "PowerGateway wurde installiert/aktualisiert."
 echo "Konfiguration: ${CONFIG_DIR}/config.toml"
+echo "WebGUI-Konfiguration: ${DATA_DIR}/application_config.json"
 echo "Statusdatei: ${DATA_DIR}/status.json"
 echo "Netzwerkstatus: ${DATA_DIR}/network_status.json"
 echo "Dienststatus: sudo systemctl status powergateway-network powergateway powergateway-web --no-pager"
