@@ -21,7 +21,7 @@ if ! id powergateway >/dev/null 2>&1; then
 fi
 usermod -a -G dialout,plugdev powergateway
 
-install -d -m 0755 "${INSTALL_DIR}" "${CONFIG_DIR}"
+install -d -m 0755 "${INSTALL_DIR}" "${CONFIG_DIR}" /etc/wireguard
 install -d -o powergateway -g powergateway -m 0750 "${DATA_DIR}"
 
 rm -rf "${INSTALL_DIR}/src" "${INSTALL_DIR}/venv"
@@ -38,28 +38,59 @@ else
   install -m 0640 -o root -g powergateway "${PROJECT_DIR}/config/config.example.toml" "${CONFIG_DIR}/config.example.toml"
 fi
 
-for unit in powergateway.service powergateway-web.service powergateway-network.service powergateway-config-reload.service powergateway-config-reload.path; do
+for unit in \
+  powergateway.service \
+  powergateway-web.service \
+  powergateway-network.service \
+  powergateway-config-reload.service \
+  powergateway-config-reload.path \
+  powergateway-wireguard-apply.service \
+  powergateway-wireguard-apply.path \
+  powergateway-wireguard-status.service \
+  powergateway-wireguard-status.timer; do
   install -m 0644 "${PROJECT_DIR}/packaging/systemd/${unit}" "${SYSTEMD_DIR}/${unit}"
 done
 
 chown -R root:root "${INSTALL_DIR}"
-chmod 0755 "${INSTALL_DIR}/src/powergateway.py" "${INSTALL_DIR}/src/service.py" "${INSTALL_DIR}/src/service_runtime.py" "${INSTALL_DIR}/src/webapp.py" "${INSTALL_DIR}/src/webapp_runtime.py" "${INSTALL_DIR}/src/networkctl.py"
+chmod 0755 \
+  "${INSTALL_DIR}/src/powergateway.py" \
+  "${INSTALL_DIR}/src/service.py" \
+  "${INSTALL_DIR}/src/service_runtime.py" \
+  "${INSTALL_DIR}/src/webapp.py" \
+  "${INSTALL_DIR}/src/webapp_runtime.py" \
+  "${INSTALL_DIR}/src/wireguard_runtime.py" \
+  "${INSTALL_DIR}/src/wireguard_apply.py" \
+  "${INSTALL_DIR}/src/networkctl.py"
 chown powergateway:powergateway "${DATA_DIR}"
 
 systemctl daemon-reload
-systemctl enable powergateway-network.service powergateway.service powergateway-web.service powergateway-config-reload.path
+systemctl enable \
+  powergateway-network.service \
+  powergateway.service \
+  powergateway-web.service \
+  powergateway-config-reload.path \
+  powergateway-wireguard-apply.path \
+  powergateway-wireguard-status.timer
 systemctl restart powergateway-network.service
 systemctl restart powergateway.service powergateway-web.service
 systemctl restart powergateway-config-reload.path
+systemctl restart powergateway-wireguard-apply.path powergateway-wireguard-status.timer
+
+if [[ -f "${DATA_DIR}/wireguard.json" ]]; then
+  systemctl start powergateway-wireguard-apply.service || true
+fi
 
 echo
 echo "PowerGateway wurde installiert/aktualisiert."
 echo "Konfiguration: ${CONFIG_DIR}/config.toml"
 echo "WebGUI-Konfiguration: ${DATA_DIR}/application_config.json"
+echo "WireGuard-Konfiguration: ${DATA_DIR}/wireguard.json"
 echo "Statusdatei: ${DATA_DIR}/status.json"
 echo "Netzwerkstatus: ${DATA_DIR}/network_status.json"
 echo "Dienststatus: sudo systemctl status powergateway-network powergateway powergateway-web --no-pager"
+echo "WireGuard-Status: sudo systemctl status powergateway-wireguard-apply.path powergateway-wireguard-status.timer --no-pager"
 echo "Log: sudo journalctl -u powergateway-network -u powergateway -u powergateway-web -f"
 echo "Weboberfläche: http://$(hostname -I | awk '{print $1}'):8080"
 echo "Netzwerk: nmcli device status"
 echo "LTE: mmcli -L"
+echo "WireGuard: sudo wg show"
