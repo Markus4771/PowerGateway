@@ -6,11 +6,18 @@ health_interval = 30
 status_interval = 30
 
 [meter]
+# "serial" für echte Hardware, "simulation" für hardwareunabhängige Tests.
+mode = "serial"
 protocol = "sml"
 device = "auto"
 baudrate = 9600
 read_timeout = 1.0
 reconnect_interval = 10
+# Verfügbare Profile: generic, emh, easymeter, iskra, kaifa, solar, unknown
+simulation_profile = "generic"
+simulation_interval = 5.0
+# Optional feste Zufallsfolge für reproduzierbare Tests.
+simulation_seed = 4771
 
 [mqtt]
 enabled = false
@@ -43,5 +50,4 @@ flush_batch_size = 100
 enabled = true
 host = "0.0.0.0"
 port = 8080
-# Messwerte werden nach dieser Zeit in der WebGUI als möglicherweise veraltet markiert.
 stale_after_seconds = 30
