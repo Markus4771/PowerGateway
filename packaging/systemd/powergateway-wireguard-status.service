@@ -1,0 +1,14 @@
+[Unit]
+Description=PowerGateway WireGuard-Status aktualisieren
+After=network.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/opt/powergateway/src
+ExecStart=/opt/powergateway/venv/bin/python /opt/powergateway/src/wireguard_apply.py --status
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/powergateway
