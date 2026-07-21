@@ -6,18 +6,36 @@ health_interval = 30
 status_interval = 30
 
 [meter]
-# "serial" für echte Hardware, "simulation" für hardwareunabhängige Tests.
-mode = "serial"
+# Datenquelle: "usb_sml", "simulation" oder "tasmota_mqtt".
+source = "usb_sml"
 protocol = "sml"
 device = "auto"
 baudrate = 9600
 read_timeout = 1.0
 reconnect_interval = 10
-# Verfügbare Profile: generic, emh, easymeter, iskra, kaifa, solar, unknown
+# Verfügbare Simulationsprofile: generic, emh, easymeter, iskra, kaifa, solar, unknown
 simulation_profile = "generic"
 simulation_interval = 5.0
-# Optional feste Zufallsfolge für reproduzierbare Tests.
 simulation_seed = 4771
+
+[meter.tasmota]
+# Der Tasmota-Lesekopf sendet seine Werte an diesen MQTT-Broker.
+# Ohne abweichende Angaben werden Host, Port und Zugangsdaten aus [mqtt] übernommen.
+topic = "tele/Stromzaehler/SENSOR"
+client_id = "powergateway-tasmota-source"
+qos = 0
+read_timeout = 2.0
+# JSON-Pfade passend zum vorhandenen Tasmota-Script.
+power_path = "Home.Power_curr"
+energy_import_path = "Home.total_in"
+energy_export_path = ""
+voltage_l1_path = ""
+voltage_l2_path = ""
+voltage_l3_path = ""
+current_l1_path = ""
+current_l2_path = ""
+current_l3_path = ""
+frequency_path = ""
 
 [mqtt]
 enabled = false
