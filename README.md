@@ -1,55 +1,33 @@
 # PowerGateway
 
-PowerGateway ist ein schlankes Raspberry-Pi-Gateway zum Auslesen eines digitalen Stromzählers über einen USB-IR-Lesekopf und zur Übertragung der Messwerte per MQTT an einen zentralen Home Assistant.
+PowerGateway ist ein modulares Raspberry-Pi-Gateway für digitale Stromzähler. Messwerte können über einen USB-SML-Lesekopf, einen Tasmota-WLAN-Lesekopf oder den integrierten Simulator eingelesen und per MQTT an Home Assistant übertragen werden.
 
 ## Zielhardware
 
 - Raspberry Pi 3B+
 - Raspberry Pi OS Lite 64 Bit
-- USB-IR-Schreib-/Lesekopf (Weidmann-kompatibel)
-- ZTE MF833 LTE Cat.4 USB-Dongle
+- optional USB-IR-Schreib-/Lesekopf
+- optional WLAN-IR-Lesekopf mit Tasmota Sensor53
+- optional ZTE MF833 LTE Cat.4 USB-Dongle
 
 ## Kernfunktionen
 
-- automatische Erkennung des IR-Lesekopfs
+- austauschbare Datenquellen
+- USB-SML mit automatischer Geräteerkennung
+- Tasmota-MQTT für WLAN-Leseköpfe
+- hardwareunabhängiger SML-Simulator
 - SML-Auswertung mit modularer OBIS-Registry
-- Energiebezug und Einspeisung, Tarifregister, Leistung, Spannung, Strom und Netzfrequenz
-- Blindleistung und Leistungsfaktor
-- Erhaltung unbekannter numerischer OBIS-Werte für Diagnose und spätere Erweiterungen
 - MQTT-Übertragung inklusive Home-Assistant-Discovery
 - LTE-Status und optionale WireGuard-Anbindung
 - lokale Pufferung bei Verbindungsunterbrechungen
-- lokale Weboberfläche für Status, Diagnose und Konfiguration
-- hardwareunabhängiger SML-Simulationsmodus
+- lokale Weboberfläche für Status und Diagnose
 - systemd-Dienste und Vorbereitung eines Debian-Pakets
-
-## Bewusst nicht enthalten
-
-PowerGateway bleibt ein spezialisiertes, wartungsarmes Gateway. Nicht Bestandteil sind:
-
-- keine REST-API
-- keine automatischen Softwareupdates
-- keine integrierte Backup- oder Wiederherstellungsfunktion
-
-Softwareaktualisierungen erfolgen kontrolliert über ein neues Debian-Paket.
 
 ## Aktueller Stand
 
-Version `0.7.0-dev` – hardwareunabhängiger Simulations- und Testmodus.
+Version `0.8.0-dev` – modulares Datenquellen-Framework mit USB-SML, Simulation und Tasmota-MQTT.
 
-Die Simulation erzeugt SML-Transportframes und führt sie durch denselben Parser-, MQTT-, Puffer- und WebGUI-Pfad wie später der echte USB-Lesekopf.
-
-Verfügbare Profile:
-
-- `generic` – generischer Dreiphasenzähler
-- `emh` – EMH-eHZ-ähnliches Profil
-- `easymeter` – EasyMeter-ähnliches Profil
-- `iskra` – Iskra-ähnliches Profil
-- `kaifa` – Kaifa-ähnliches Profil
-- `solar` – Zweirichtungszähler mit Bezug und Einspeisung
-- `unknown` – zusätzliche unbekannte OBIS-Kennzahl für Diagnosetests
-
-## Simulation aktivieren
+## Datenquelle auswählen
 
 Konfiguration öffnen:
 
@@ -57,29 +35,70 @@ Konfiguration öffnen:
 sudo nano /etc/powergateway/config.toml
 ```
 
-Im Abschnitt `[meter]` einstellen:
+### USB-SML-Lesekopf
 
 ```toml
 [meter]
-mode = "simulation"
+source = "usb_sml"
+device = "auto"
+baudrate = 9600
+```
+
+### Simulation
+
+```toml
+[meter]
+source = "simulation"
 simulation_profile = "generic"
 simulation_interval = 5.0
 simulation_seed = 4771
 ```
 
-Danach den Dienst neu starten:
+### Tasmota-WLAN-Lesekopf
+
+Der vorhandene Lesekopf veröffentlicht diese Nachricht:
+
+```json
+{"Home":{"Power_curr":245,"total_in":41222.86}}
+```
+
+Passende Konfiguration:
+
+```toml
+[meter]
+source = "tasmota_mqtt"
+
+[meter.tasmota]
+topic = "tele/Stromzaehler/SENSOR"
+power_path = "Home.Power_curr"
+energy_import_path = "Home.total_in"
+```
+
+Der Broker wird im Abschnitt `[mqtt]` eingerichtet:
+
+```toml
+[mqtt]
+enabled = true
+host = "192.168.178.50"
+port = 1883
+username = ""
+password = ""
+topic_prefix = "powergateway/powergateway-01"
+homeassistant_discovery = true
+```
+
+Anschließend:
 
 ```bash
 sudo systemctl restart powergateway
 sudo journalctl -u powergateway -f
 ```
 
-Zurück auf echte Hardware:
+Erwartete Meldungen:
 
-```toml
-[meter]
-mode = "serial"
-device = "auto"
+```text
+Tasmota-MQTT verbunden und Topic abonniert: tele/Stromzaehler/SENSOR
+Tasmota-Messwerte empfangen: power_total, energy_import
 ```
 
 ## Schnellstart
@@ -88,14 +107,6 @@ device = "auto"
 git clone https://github.com/Markus4771/PowerGateway.git
 cd PowerGateway
 sudo bash install.sh
-```
-
-Anschließend:
-
-```bash
-sudo nano /etc/powergateway/config.toml
-sudo systemctl restart powergateway
-sudo journalctl -u powergateway -f
 ```
 
 Die Weboberfläche ist standardmäßig unter `http://IP-DES-RASPBERRY:8080` erreichbar.
@@ -112,8 +123,14 @@ Die Weboberfläche ist standardmäßig unter `http://IP-DES-RASPBERRY:8080` erre
 ## Tests
 
 ```bash
-python3 -m unittest discover -s tests -v
+PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
+
+## Bewusst nicht enthalten
+
+- keine öffentliche REST-API
+- keine automatischen Softwareupdates
+- keine integrierte Backup- oder Wiederherstellungsfunktion
 
 ## Lizenz
 
