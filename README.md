@@ -29,7 +29,7 @@ Version `0.1.0-dev` – technische Grundstruktur.
 ```bash
 git clone https://github.com/Markus4771/PowerGateway.git
 cd PowerGateway
-sudo ./install.sh
+sudo bash install.sh
 ```
 
 Anschließend die Konfiguration bearbeiten:
