@@ -1,9 +1,8 @@
-"""Best-effort SML OBIS decoder for PowerGateway.
+"""SML/OBIS decoding and registry for PowerGateway.
 
-The decoder intentionally keeps transport handling separate from value decoding.
-It scans SML list entries for the common sequence
-OBIS, status, time, unit, scaler, value and returns normalized measurements.
-Unknown values remain available with their raw OBIS identifier.
+The module intentionally keeps serial transport handling separate from value
+interpretation. It scans SML list entries, normalizes common German meter
+values and preserves unknown numeric OBIS values for diagnostics.
 """
 from __future__ import annotations
 
@@ -12,27 +11,75 @@ from typing import Any
 
 
 UNIT_NAMES = {
+    9: "°",
+    22: "varh",
+    23: "VAh",
     27: "W",
+    28: "VA",
+    29: "var",
     30: "Wh",
+    31: "A",
     32: "V",
-    33: "A",
+    33: "V/m",
     35: "Hz",
+    44: "s",
+    45: "min",
+    46: "h",
+    55: "%",
 }
 
+
+@dataclass(frozen=True)
+class ObisDefinition:
+    key: str
+    name: str
+    unit: str | None = None
+    state_class: str | None = None
+    device_class: str | None = None
+    diagnostic: bool = False
+
+
+OBIS_REGISTRY: dict[str, ObisDefinition] = {
+    # Wirkenergie Bezug
+    "1-0:1.8.0*255": ObisDefinition("energy_import", "Energie Bezug gesamt", "kWh", "total_increasing", "energy"),
+    "1-0:1.8.1*255": ObisDefinition("energy_import_tariff_1", "Energie Bezug Tarif 1", "kWh", "total_increasing", "energy"),
+    "1-0:1.8.2*255": ObisDefinition("energy_import_tariff_2", "Energie Bezug Tarif 2", "kWh", "total_increasing", "energy"),
+    # Wirkenergie Einspeisung
+    "1-0:2.8.0*255": ObisDefinition("energy_export", "Energie Einspeisung gesamt", "kWh", "total_increasing", "energy"),
+    "1-0:2.8.1*255": ObisDefinition("energy_export_tariff_1", "Energie Einspeisung Tarif 1", "kWh", "total_increasing", "energy"),
+    "1-0:2.8.2*255": ObisDefinition("energy_export_tariff_2", "Energie Einspeisung Tarif 2", "kWh", "total_increasing", "energy"),
+    # Leistung gesamt und je Phase. Manche Zähler nutzen 21/41/61, andere 36/56/76.
+    "1-0:16.7.0*255": ObisDefinition("power_total", "Aktuelle Leistung", "W", "measurement", "power"),
+    "1-0:21.7.0*255": ObisDefinition("power_l1", "Leistung L1", "W", "measurement", "power"),
+    "1-0:41.7.0*255": ObisDefinition("power_l2", "Leistung L2", "W", "measurement", "power"),
+    "1-0:61.7.0*255": ObisDefinition("power_l3", "Leistung L3", "W", "measurement", "power"),
+    "1-0:36.7.0*255": ObisDefinition("power_l1", "Leistung L1", "W", "measurement", "power"),
+    "1-0:56.7.0*255": ObisDefinition("power_l2", "Leistung L2", "W", "measurement", "power"),
+    "1-0:76.7.0*255": ObisDefinition("power_l3", "Leistung L3", "W", "measurement", "power"),
+    # Spannung und Strom
+    "1-0:32.7.0*255": ObisDefinition("voltage_l1", "Spannung L1", "V", "measurement", "voltage"),
+    "1-0:52.7.0*255": ObisDefinition("voltage_l2", "Spannung L2", "V", "measurement", "voltage"),
+    "1-0:72.7.0*255": ObisDefinition("voltage_l3", "Spannung L3", "V", "measurement", "voltage"),
+    "1-0:31.7.0*255": ObisDefinition("current_l1", "Strom L1", "A", "measurement", "current"),
+    "1-0:51.7.0*255": ObisDefinition("current_l2", "Strom L2", "A", "measurement", "current"),
+    "1-0:71.7.0*255": ObisDefinition("current_l3", "Strom L3", "A", "measurement", "current"),
+    # Netzqualität
+    "1-0:14.7.0*255": ObisDefinition("frequency", "Netzfrequenz", "Hz", "measurement", "frequency"),
+    "1-0:13.7.0*255": ObisDefinition("power_factor", "Leistungsfaktor", None, "measurement", "power_factor"),
+    "1-0:33.7.0*255": ObisDefinition("power_factor_l1", "Leistungsfaktor L1", None, "measurement", "power_factor"),
+    "1-0:53.7.0*255": ObisDefinition("power_factor_l2", "Leistungsfaktor L2", None, "measurement", "power_factor"),
+    "1-0:73.7.0*255": ObisDefinition("power_factor_l3", "Leistungsfaktor L3", None, "measurement", "power_factor"),
+    # Blindleistung
+    "1-0:3.8.0*255": ObisDefinition("reactive_energy_import", "Blindenergie Bezug", "kvarh", "total_increasing"),
+    "1-0:4.8.0*255": ObisDefinition("reactive_energy_export", "Blindenergie Abgabe", "kvarh", "total_increasing"),
+    "1-0:3.7.0*255": ObisDefinition("reactive_power_import", "Blindleistung Bezug", "var", "measurement"),
+    "1-0:4.7.0*255": ObisDefinition("reactive_power_export", "Blindleistung Abgabe", "var", "measurement"),
+}
+
+# Backwards-compatible tuple view used by the MQTT discovery wrapper.
 KNOWN_OBIS = {
-    "1-0:1.8.0*255": ("energy_import", "Energie Bezug", "kWh", "total_increasing"),
-    "1-0:2.8.0*255": ("energy_export", "Energie Einspeisung", "kWh", "total_increasing"),
-    "1-0:16.7.0*255": ("power_total", "Aktuelle Leistung", "W", "measurement"),
-    "1-0:36.7.0*255": ("power_l1", "Leistung L1", "W", "measurement"),
-    "1-0:56.7.0*255": ("power_l2", "Leistung L2", "W", "measurement"),
-    "1-0:76.7.0*255": ("power_l3", "Leistung L3", "W", "measurement"),
-    "1-0:32.7.0*255": ("voltage_l1", "Spannung L1", "V", "measurement"),
-    "1-0:52.7.0*255": ("voltage_l2", "Spannung L2", "V", "measurement"),
-    "1-0:72.7.0*255": ("voltage_l3", "Spannung L3", "V", "measurement"),
-    "1-0:31.7.0*255": ("current_l1", "Strom L1", "A", "measurement"),
-    "1-0:51.7.0*255": ("current_l2", "Strom L2", "A", "measurement"),
-    "1-0:71.7.0*255": ("current_l3", "Strom L3", "A", "measurement"),
-    "1-0:14.7.0*255": ("frequency", "Netzfrequenz", "Hz", "measurement"),
+    obis: (definition.key, definition.name, definition.unit, definition.state_class)
+    for obis, definition in OBIS_REGISTRY.items()
 }
 
 
@@ -47,6 +94,8 @@ class Measurement:
     state_class: str | None = None
     scaler: int = 0
     raw_value: int | float | None = None
+    quality: str = "good"
+    known: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -60,30 +109,25 @@ def obis_to_string(value: bytes) -> str:
 
 
 def _read_tl(data: bytes, offset: int) -> tuple[int, int, int]:
-    """Return type, payload length and new offset for a simple SML TL field."""
+    """Return type, payload length and payload offset for an SML TL field."""
     if offset >= len(data):
         raise ValueError("TL außerhalb des Telegramms")
     first = data[offset]
     offset += 1
     field_type = (first >> 4) & 0x07
     length = first & 0x0F
+    header_bytes = 1
     if first & 0x80:
-        # Multi-byte lengths are uncommon for scalar list entries. Support them
-        # without interpreting type bits from continuation bytes.
         while True:
             if offset >= len(data):
                 raise ValueError("Unvollständige TL-Länge")
             byte = data[offset]
             offset += 1
+            header_bytes += 1
             length = (length << 4) | (byte & 0x0F)
             if not byte & 0x80:
                 break
-    header_length = offset
-    payload_length = max(0, length - (header_length - (offset - 1)))
-    # For ordinary one-byte TL fields, length includes the TL byte.
-    if first & 0x80 == 0:
-        payload_length = max(0, length - 1)
-    return field_type, payload_length, offset
+    return field_type, max(0, length - header_bytes), offset
 
 
 def _decode_scalar(data: bytes, offset: int) -> tuple[Any, int]:
@@ -103,43 +147,56 @@ def _decode_scalar(data: bytes, offset: int) -> tuple[Any, int]:
     return payload, end
 
 
+def _generic_key(obis: str) -> str:
+    return "obis_" + obis.replace("-", "_").replace(":", "_").replace(".", "_").replace("*", "_")
+
+
 def _normalize(obis: str, raw_value: int | float, scaler: int, unit_code: int | None) -> Measurement:
     value: float | int = raw_value * (10 ** scaler)
-    unit = UNIT_NAMES.get(unit_code) if unit_code is not None else None
-    key = "obis_" + obis.replace("-", "_").replace(":", "_").replace(".", "_").replace("*", "_")
-    name = obis
-    state_class = None
-    device_class = None
-    if obis in KNOWN_OBIS:
-        key, name, preferred_unit, state_class = KNOWN_OBIS[obis]
-        if preferred_unit == "kWh" and unit == "Wh":
-            value = value / 1000
-            unit = "kWh"
-        else:
-            unit = preferred_unit or unit
-        if unit in {"Wh", "kWh"}:
-            device_class = "energy"
-        elif unit == "W":
-            device_class = "power"
-        elif unit == "V":
-            device_class = "voltage"
-        elif unit == "A":
-            device_class = "current"
-        elif unit == "Hz":
-            device_class = "frequency"
-    return Measurement(key, name, obis, value, unit, device_class, state_class, scaler, raw_value)
+    reported_unit = UNIT_NAMES.get(unit_code) if unit_code is not None else None
+    definition = OBIS_REGISTRY.get(obis)
+
+    if definition is None:
+        return Measurement(
+            key=_generic_key(obis),
+            name=obis,
+            obis=obis,
+            value=value,
+            unit=reported_unit,
+            scaler=scaler,
+            raw_value=raw_value,
+            known=False,
+        )
+
+    unit = definition.unit or reported_unit
+    if definition.unit == "kWh" and reported_unit == "Wh":
+        value /= 1000
+    elif definition.unit == "kvarh" and reported_unit == "varh":
+        value /= 1000
+
+    return Measurement(
+        key=definition.key,
+        name=definition.name,
+        obis=obis,
+        value=value,
+        unit=unit,
+        device_class=definition.device_class,
+        state_class=definition.state_class,
+        scaler=scaler,
+        raw_value=raw_value,
+    )
 
 
 def decode_obis_values(frame: bytes) -> list[Measurement]:
-    """Extract common OBIS list entries from an SML frame.
+    """Extract numeric OBIS list entries from an SML frame.
 
-    This is deliberately tolerant: malformed candidates are skipped so one
-    manufacturer-specific field cannot discard the complete telegram.
+    Malformed candidates are skipped so manufacturer-specific fields do not
+    discard an otherwise valid telegram. Duplicate aliases are collapsed by
+    normalized key; the first occurrence in the telegram wins.
     """
     results: list[Measurement] = []
-    seen: set[tuple[str, float | int]] = set()
+    seen_keys: set[str] = set()
     for index in range(0, max(0, len(frame) - 7)):
-        # OBIS octet strings are encoded as TL 0x07 followed by six bytes.
         if frame[index] != 0x07:
             continue
         obis_bytes = frame[index + 1:index + 7]
@@ -147,22 +204,19 @@ def decode_obis_values(frame: bytes) -> list[Measurement]:
             continue
         try:
             cursor = index + 7
-            # List entry fields after OBIS: status, value time, unit, scaler, value.
-            _, cursor = _decode_scalar(frame, cursor)
-            _, cursor = _decode_scalar(frame, cursor)
+            _, cursor = _decode_scalar(frame, cursor)  # status
+            _, cursor = _decode_scalar(frame, cursor)  # value time
             unit_value, cursor = _decode_scalar(frame, cursor)
             scaler_value, cursor = _decode_scalar(frame, cursor)
             raw_value, _ = _decode_scalar(frame, cursor)
-            if not isinstance(raw_value, (int, float)):
+            if isinstance(raw_value, bool) or not isinstance(raw_value, (int, float)):
                 continue
             scaler = int(scaler_value) if isinstance(scaler_value, int) else 0
             unit_code = int(unit_value) if isinstance(unit_value, int) else None
-            obis = obis_to_string(obis_bytes)
-            measurement = _normalize(obis, raw_value, scaler, unit_code)
-            identity = (measurement.obis, measurement.value)
-            if identity not in seen:
+            measurement = _normalize(obis_to_string(obis_bytes), raw_value, scaler, unit_code)
+            if measurement.key not in seen_keys:
                 results.append(measurement)
-                seen.add(identity)
+                seen_keys.add(measurement.key)
         except (ValueError, IndexError, OverflowError):
             continue
     return results
