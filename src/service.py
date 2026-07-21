@@ -95,7 +95,7 @@ def publish_discovery(self: core.MqttPublisher) -> None:
         "name": self.gateway_name,
         "manufacturer": "PowerGateway",
         "model": "Raspberry Pi Meter Gateway",
-        "sw_version": "0.5.0-dev",
+        "sw_version": "0.6.0-dev",
     }
     published_keys: set[str] = set()
     for obis, definition in OBIS_REGISTRY.items():
