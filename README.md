@@ -1,105 +1,43 @@
 # PowerGateway
 
-PowerGateway ist ein modulares Raspberry-Pi-Gateway für digitale Stromzähler. Messwerte können über einen USB-SML-Lesekopf, einen Tasmota-WLAN-Lesekopf oder den integrierten Simulator eingelesen und per MQTT an Home Assistant übertragen werden.
-
-## Zielhardware
-
-- Raspberry Pi 3B+
-- Raspberry Pi OS Lite 64 Bit
-- optional USB-IR-Schreib-/Lesekopf
-- optional WLAN-IR-Lesekopf mit Tasmota Sensor53
-- optional ZTE MF833 LTE Cat.4 USB-Dongle
-
-## Kernfunktionen
-
-- austauschbare Datenquellen
-- USB-SML mit automatischer Geräteerkennung
-- Tasmota-MQTT für WLAN-Leseköpfe
-- hardwareunabhängiger SML-Simulator
-- SML-Auswertung mit modularer OBIS-Registry
-- MQTT-Übertragung inklusive Home-Assistant-Discovery
-- LTE-Status und optionale WireGuard-Anbindung
-- lokale Pufferung bei Verbindungsunterbrechungen
-- lokale Weboberfläche für Status und Diagnose
-- systemd-Dienste und Vorbereitung eines Debian-Pakets
+PowerGateway ist ein modulares Raspberry-Pi- und Debian-Gateway für digitale Stromzähler. Es liest genau eine aktive Zählerquelle ein und überträgt die Messwerte per MQTT an Home Assistant.
 
 ## Aktueller Stand
 
-Version `0.8.0-dev` – modulares Datenquellen-Framework mit USB-SML, Simulation und Tasmota-MQTT.
+Entwicklungsversion: **0.9.7-dev**
 
-## Datenquelle auswählen
+Vorhanden sind:
 
-Konfiguration öffnen:
+- USB-SML-Grundlage mit Geräteerkennung
+- Tasmota MQTT und Generic MQTT
+- MQTT-Assistent mit Verbindungstest, Topic-Suche und JSON-Feldvorschlägen
+- Home-Assistant-Discovery-Grundlage
+- LAN, WLAN, LTE und Setup-Hotspot
+- WireGuard-Grundlage
+- lokale WebGUI
+- einfache Benutzerverwaltung
+- Einrichtungsstatus und Systemdiagnose
+- systemd-Dienste und Installer
 
-```bash
-sudo nano /etc/powergateway/config.toml
-```
+Der aktuelle Stand ist noch nicht als stabile Version freigegeben. Reale USB-SML-Geräte, Home Assistant, Netzwerk-Failover, LTE und WireGuard müssen weiter praktisch getestet werden.
 
-### USB-SML-Lesekopf
+## Zielhardware
 
-```toml
-[meter]
-source = "usb_sml"
-device = "auto"
-baudrate = 9600
-```
+- Raspberry Pi 3B+ oder neuer
+- Raspberry Pi OS Lite 64 Bit oder Debian
+- optional USB-SML-Lesekopf
+- optional Tasmota-WLAN-Lesekopf
+- optional LTE-USB-Modem
 
-### Simulation
+## Datenquellen
 
-```toml
-[meter]
-source = "simulation"
-simulation_profile = "generic"
-simulation_interval = 5.0
-simulation_seed = 4771
-```
+- USB-SML
+- Tasmota MQTT
+- Generic MQTT
+- Simulation
+- HTTP später
 
-### Tasmota-WLAN-Lesekopf
-
-Der vorhandene Lesekopf veröffentlicht diese Nachricht:
-
-```json
-{"Home":{"Power_curr":245,"total_in":41222.86}}
-```
-
-Passende Konfiguration:
-
-```toml
-[meter]
-source = "tasmota_mqtt"
-
-[meter.tasmota]
-topic = "tele/Stromzaehler/SENSOR"
-power_path = "Home.Power_curr"
-energy_import_path = "Home.total_in"
-```
-
-Der Broker wird im Abschnitt `[mqtt]` eingerichtet:
-
-```toml
-[mqtt]
-enabled = true
-host = "192.168.178.50"
-port = 1883
-username = ""
-password = ""
-topic_prefix = "powergateway/powergateway-01"
-homeassistant_discovery = true
-```
-
-Anschließend:
-
-```bash
-sudo systemctl restart powergateway
-sudo journalctl -u powergateway -f
-```
-
-Erwartete Meldungen:
-
-```text
-Tasmota-MQTT verbunden und Topic abonniert: tele/Stromzaehler/SENSOR
-Tasmota-Messwerte empfangen: power_total, energy_import
-```
+Es ist immer genau eine Datenquelle aktiv.
 
 ## Schnellstart
 
@@ -109,16 +47,63 @@ cd PowerGateway
 sudo bash install.sh
 ```
 
-Die Weboberfläche ist standardmäßig unter `http://IP-DES-RASPBERRY:8080` erreichbar.
+Danach:
 
-## Verzeichnisse
+```bash
+sudo systemctl status powergateway --no-pager -l
+sudo systemctl status powergateway-web --no-pager -l
+```
+
+Die WebGUI ist standardmäßig erreichbar unter:
+
+```text
+http://IP-DES-GERÄTS:8080
+```
+
+## Aktualisierung
+
+```bash
+cd ~/PowerGateway
+git pull
+sudo bash install.sh
+```
+
+## Dokumentation
+
+- [Installation auf Raspberry Pi](docs/installation/RaspberryPi.md)
+- [Home Assistant anbinden](docs/installation/HomeAssistant.md)
+- [MQTT konfigurieren](docs/configuration/MQTT.md)
+- [USB-SML konfigurieren](docs/configuration/USB-SML.md)
+- [Roadmap](docs/roadmap/ROADMAP.md)
+- [Projektkontext](CHATGPT_PROJEKTKONTEXT.md)
+- [Einstieg für einen neuen Chat](NEUER_CHAT.md)
+
+## Projektaufteilung
+
+PowerGateway übernimmt:
+
+- Zählerwerte einlesen
+- Werte normieren
+- MQTT-Ausgabe
+- Home-Assistant-Discovery
+- Netzwerk, LTE, Hotspot und WireGuard
+- Einrichtung, Status und Diagnose
+
+Home Assistant übernimmt:
+
+- Diagramme
+- Energie-Dashboard
+- Tages-, Monats- und Jahresauswertungen
+- Langzeitstatistiken
+- Automationen und Benachrichtigungen
+
+## Typische Pfade
 
 - Programm: `/opt/powergateway`
 - Konfiguration: `/etc/powergateway/config.toml`
-- Daten/Puffer: `/var/lib/powergateway`
-- Messwerte: `/var/lib/powergateway/latest_values.json`
+- Laufzeitdaten: `/var/lib/powergateway`
 - Hauptdienst: `powergateway.service`
-- Weboberfläche: `powergateway-web.service`
+- WebGUI: `powergateway-web.service`
 
 ## Tests
 
@@ -128,9 +113,12 @@ PYTHONPATH=src python3 -m unittest discover -s tests -v
 
 ## Bewusst nicht enthalten
 
-- keine öffentliche REST-API
-- keine automatischen Softwareupdates
-- keine integrierte Backup- oder Wiederherstellungsfunktion
+- lokale Diagramme und Langzeitstatistiken
+- öffentliche REST-API
+- automatische Softwareupdates
+- integrierte Backup- und Wiederherstellungsverwaltung
+- komplexe Rollenverwaltung
+- Batterie-, Wallbox- oder EMS-Steuerung
 
 ## Lizenz
 
