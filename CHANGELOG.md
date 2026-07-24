@@ -1,5 +1,15 @@
 # Änderungsprotokoll
 
+## 0.9.16-dev – 2026-07-24
+
+- zentrale Systemübersicht mit Ampelstatus ergänzt
+- Internet, DNS, Stromzähler, MQTT, Home Assistant, WireGuard, SSH und No-IP werden gemeinsam geprüft
+- Status der PowerGateway- und Weboberflächen-Dienste integriert
+- ausführliche Gesamtdiagnose mit Arbeitsspeicher, Datenträger, Laufzeit und fehlgeschlagenen systemd-Diensten ergänzt
+- optionale oder noch nicht konfigurierte Funktionen werden getrennt von echten Fehlern dargestellt
+- Detailinformationen je Statuskachel ein- und ausblendbar gemacht
+- Dashboard als eigenes Modul in die Plugin-Webanwendung eingebunden
+
 ## 0.9.15-dev – 2026-07-24
 
 - öffentliche IPv4 wird automatisch ermittelt und mit dem letzten Stand verglichen
