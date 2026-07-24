@@ -1,5 +1,17 @@
 # Änderungsprotokoll
 
+## 0.9.14-dev – 2026-07-24
+
+- SSH-Tunnel-WebGUI vollständig in die Plugin-Webanwendung eingebunden
+- Start, Neustart und Stopp über eine eng begrenzte sudo-Regel ermöglicht
+- SSH-Konfiguration wird vor dem Dienststart geprüft
+- verständliche Fehler bei deaktivierter Verbindung oder falscher Verbindungsart ergänzt
+- Dienststatus, Autostart, Laufzeitstatus und Journal-Protokolle verbessert
+- Speichern der Home-Assistant-Konfiguration startet oder stoppt den Tunnel passend zur Auswahl
+- systemd-Neustart auf echte Fehler begrenzt; deaktivierte Tunnel erzeugen keine Neustartschleife mehr
+- Installer und Debian-Paket installieren und prüfen die benötigte sudo-Regel
+- SSH-Tunneldienst wird nur automatisch aktiviert, wenn ein SSH-Modus tatsächlich konfiguriert ist
+
 ## 0.9.13-dev – 2026-07-24
 
 - produktiven SSH- und Reverse-SSH-Tunnelprozess ergänzt
