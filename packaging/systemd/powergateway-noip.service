@@ -1,0 +1,17 @@
+[Unit]
+Description=PowerGateway No-IP DDNS Update
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=powergateway
+Group=powergateway
+WorkingDirectory=/opt/powergateway/src
+Environment=PYTHONPATH=/opt/powergateway/src
+ExecStart=/opt/powergateway/venv/bin/python /opt/powergateway/src/noip_client.py
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/powergateway
