@@ -6,6 +6,7 @@ from flask import Response, jsonify
 
 import webapp_features as features
 import wireguard_advanced  # registriert Peer-API und erweitert die WebGUI
+import homeassistant_runtime  # registriert Home-Assistant-, SSH- und No-IP-API
 from plugin_runtime import manager, module_status
 
 app = features.app
