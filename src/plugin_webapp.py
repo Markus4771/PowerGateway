@@ -6,6 +6,7 @@ import webapp_features as features
 import wireguard_advanced
 import homeassistant_runtime
 import ssh_tunnel_web
+import dashboard_runtime
 from plugin_runtime import manager, module_status
 app=features.app
 legacy=features.legacy
