@@ -10,7 +10,7 @@ Group=powergateway
 WorkingDirectory=/opt/powergateway/src
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/opt/powergateway/venv/bin/python /opt/powergateway/src/ha_tunnel.py
-Restart=always
+Restart=on-failure
 RestartSec=10
 StartLimitIntervalSec=0
 TimeoutStopSec=15
