@@ -48,7 +48,7 @@ def _guard(key: str, label: str, callback: Callable[[], dict[str, Any]]) -> dict
         result.setdefault('key', key)
         result.setdefault('label', label)
         return result
-    except Exception as exc:  # Diagnose darf das Dashboard nie abbrechen.
+    except Exception as exc:
         return _item(key, label, 'error', str(exc))
 
 
@@ -177,7 +177,7 @@ def dashboard_diagnostics() -> Response:
 
 
 SECTION = r'''
-<section id="dashboard" class="tab"><div class="toolbar"><div><h2>Systemübersicht</h2><div class="muted">Alle wichtigen PowerGateway-Verbindungen und Dienste auf einen Blick.</div></div><div><button class="secondary" onclick="loadCentralDiagnostics()">Alles prüfen</button> <button onclick="loadCentralDashboard()">Aktualisieren</button></div></div><div id="centralSummary" class="section muted">Noch nicht geprüft.</div><div id="centralCards" class="grid"></div><div class="section"><h3>Gesamtdiagnose</h3><pre id="centralDiagnostics" style="max-height:520px;overflow:auto">Die ausführliche Diagnose wird nur auf Anforderung ausgeführt.</pre></div></section>
+<section id="systemOverview" class="tab"><div class="toolbar"><div><h2>Systemübersicht</h2><div class="muted">Alle wichtigen PowerGateway-Verbindungen und Dienste auf einen Blick.</div></div><div><button class="secondary" onclick="loadCentralDiagnostics()">Alles prüfen</button> <button onclick="loadCentralDashboard()">Aktualisieren</button></div></div><div id="centralSummary" class="section muted">Noch nicht geprüft.</div><div id="centralCards" class="grid"></div><div class="section"><h3>Gesamtdiagnose</h3><pre id="centralDiagnostics" style="max-height:520px;overflow:auto">Die ausführliche Diagnose wird nur auf Anforderung ausgeführt.</pre></div></section>
 '''
 
 JS = r'''
@@ -188,9 +188,9 @@ async function loadCentralDiagnostics(){try{$('centralDiagnostics').textContent=
 '''
 
 page = runtime.PAGE
-page = page.replace('<button onclick="showTab(\'users\',this)">Benutzer</button>', '<button onclick="showTab(\'dashboard\',this)">Übersicht</button><button onclick="showTab(\'users\',this)">Benutzer</button>')
+page = page.replace('<button onclick="showTab(\'users\',this)">Benutzer</button>', '<button onclick="showTab(\'systemOverview\',this)">Übersicht</button><button onclick="showTab(\'users\',this)">Benutzer</button>')
 page = page.replace('<section id="users"', SECTION + '<section id="users"')
-page = page.replace("if(id==='users')loadUsers();", "if(id==='dashboard')loadCentralDashboard();if(id==='users')loadUsers();")
+page = page.replace("if(id==='users')loadUsers();", "if(id==='systemOverview')loadCentralDashboard();if(id==='users')loadUsers();")
 page = page.replace('refresh();setInterval(refresh,5000);', JS + 'refresh();setInterval(refresh,5000);')
 runtime.PAGE = page
 legacy.PAGE = page
