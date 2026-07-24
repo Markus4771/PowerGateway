@@ -1,5 +1,17 @@
 # Änderungsprotokoll
 
+## 0.9.15-dev – 2026-07-24
+
+- öffentliche IPv4 wird automatisch ermittelt und mit dem letzten Stand verglichen
+- No-IP wird nur bei fälligem Intervall oder geänderter IP aktualisiert
+- letzter Versuch, letzter Erfolg und nächster Prüftermin werden gespeichert
+- Status `unchanged` und `not_due` verhindern unnötige DDNS-Anfragen
+- No-IP-Diagnose für öffentliche IP, DNS-Auflösung und letzten Updatezustand ergänzt
+- WebGUI zeigt den vollständigen No-IP-Status mit lesbaren Zeitangaben
+- manueller Sofortabgleich und eigene Diagnose-Schaltfläche ergänzt
+- optionaler Neustart des aktiven SSH-Tunnels nach erfolgreicher IP-Änderung umgesetzt
+- No-IP-Prüftimer auf fünf Minuten gesetzt; das konfigurierte Intervall wird intern berücksichtigt
+
 ## 0.9.14-dev – 2026-07-24
 
 - SSH-Tunnel-WebGUI vollständig in die Plugin-Webanwendung eingebunden
