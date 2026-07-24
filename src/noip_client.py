@@ -8,6 +8,7 @@ import os
 import socket
 import tempfile
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -54,10 +55,11 @@ def load_config() -> dict[str, Any]:
 
 
 def public_config(config: dict[str, Any] | None = None) -> dict[str, Any]:
-    config = dict(config or load_config())
-    config["password"] = ""
-    config["has_password"] = bool((config or load_config()).get("password"))
-    return config
+    source = dict(config or load_config())
+    has_password = bool(source.get("password"))
+    source["password"] = ""
+    source["has_password"] = has_password
+    return source
 
 
 def validate_config(supplied: dict[str, Any]) -> dict[str, Any]:
