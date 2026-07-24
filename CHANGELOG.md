@@ -1,5 +1,16 @@
 # Änderungsprotokoll
 
+## 0.9.17-dev – 2026-07-24
+
+- LTE-Erkennung um USB-Ethernet-, CDC-Ethernet-, RNDIS-, NCM-, MBIM- und QMI-Geräte erweitert
+- ZTE MF833U1 mit USB-ID `19d2:1706` wird als LTE-Stick erkannt
+- LTE-Schnittstellen werden auch dann erkannt, wenn NetworkManager sie als Ethernet statt GSM meldet
+- Hersteller, Modell, USB-ID, Treiber, Betriebsart, IP-Adresse und Gateway werden im Netzwerkstatus bereitgestellt
+- Verbindungstest kann gezielt über die erkannte LTE-Schnittstelle durchgeführt werden
+- USB-Ethernet-LTE-Sticks benötigen keinen APN in PowerGateway und werden über DHCP verbunden
+- vorhandene LTE-Verbindung kann direkt aktiviert werden
+- automatische Netzwerkpriorisierung berücksichtigt die tatsächlich erkannte LTE-Verbindung
+
 ## 0.9.16-dev – 2026-07-24
 
 - zentrale Systemübersicht mit Ampelstatus ergänzt
