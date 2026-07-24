@@ -13,6 +13,26 @@ from noip_client import load_config as load_noip, public_config as public_noip, 
 app = features.app
 legacy = features.legacy
 runtime = features.runtime
+SERVICE = 'powergateway-ha-tunnel.service'
+
+
+def _sync_tunnel_service(config: dict) -> dict:
+    ssh_enabled = bool(config.get('enabled')) and config.get('mode') in {'ssh_mqtt', 'reverse_ssh_mqtt'}
+    action = ['enable', '--now'] if ssh_enabled else ['stop']
+    try:
+        result = subprocess.run(
+            ['sudo', '-n', '/usr/bin/systemctl', *action, SERVICE],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {'ok': False, 'message': str(exc)}
+    return {
+        'ok': result.returncode == 0,
+        'message': result.stderr.strip() or result.stdout.strip() or ('SSH-Tunnel gestartet.' if ssh_enabled else 'SSH-Tunnel gestoppt.'),
+    }
 
 
 @app.get('/_internal/homeassistant-connector')
@@ -28,8 +48,11 @@ def connector_save() -> Response:
         config = save_ha(request.get_json(silent=True) or {})
     except (ValueError, TypeError) as exc:
         return jsonify({'error': str(exc)}), 400
-    subprocess.run(['systemctl', 'restart', 'powergateway-ha-tunnel.service'], check=False, timeout=15)
-    return jsonify({'ok': True, 'config': public_ha(config), 'message': 'Home-Assistant-Verbindung gespeichert.'})
+    service = _sync_tunnel_service(config)
+    message = 'Home-Assistant-Verbindung gespeichert.'
+    if not service['ok']:
+        message += f" Die SSH-Dienststeuerung meldet: {service['message']}"
+    return jsonify({'ok': True, 'config': public_ha(config), 'service': service, 'message': message})
 
 
 @app.post('/_internal/homeassistant-connector/test')
@@ -84,7 +107,7 @@ SECTION = r'''
 JS = r'''
 async function loadHaConnector(){try{const d=await api('/_internal/homeassistant-connector'),c=d.config||{},n=d.noip||{};$('hacEnabled').checked=!!c.enabled;val('hacMode',c.mode||'direct_mqtt');val('hacHaHost',c.ha_host||'');val('hacHaPort',c.ha_port||8123);val('hacMqttHost',c.mqtt_host||'');val('hacMqttPort',c.mqtt_port||1883);val('hacSshHost',c.ssh_host||'');val('hacSshPort',c.ssh_port||22);val('hacSshUser',c.ssh_user||'');val('hacIdentity',c.identity_file||'');val('hacLocalPort',c.local_mqtt_port||18830);val('hacRemotePort',c.remote_mqtt_port||1883);$('noipEnabled').checked=!!n.enabled;val('noipHostname',n.hostname||'');val('noipUsername',n.username||'');val('noipPassword','');val('noipInterval',n.interval_minutes||10)}catch(e){notice(e.message,false)}}
 function haPayload(){return {enabled:$('hacEnabled').checked,mode:$('hacMode').value,ha_host:$('hacHaHost').value.trim(),ha_port:Number($('hacHaPort').value),mqtt_host:$('hacMqttHost').value.trim(),mqtt_port:Number($('hacMqttPort').value),ssh_host:$('hacSshHost').value.trim(),ssh_port:Number($('hacSshPort').value),ssh_user:$('hacSshUser').value.trim(),identity_file:$('hacIdentity').value.trim(),local_mqtt_port:Number($('hacLocalPort').value),remote_mqtt_host:'127.0.0.1',remote_mqtt_port:Number($('hacRemotePort').value)}}
-async function saveHaConnector(){try{const d=await api('/_internal/homeassistant-connector',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(haPayload())});notice(d.message)}catch(e){notice(e.message,false)}}
+async function saveHaConnector(){try{const d=await api('/_internal/homeassistant-connector',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(haPayload())});notice(d.message);if(typeof loadSshTunnelStatus==='function')await loadSshTunnelStatus()}catch(e){notice(e.message,false)}}
 async function testHaConnector(){try{const d=await api('/_internal/homeassistant-connector/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(haPayload())});$('hacResult').textContent=JSON.stringify(d,null,2)}catch(e){$('hacResult').textContent=e.message;notice(e.message,false)}}
 async function createHaSshKey(){try{const d=await api('/_internal/homeassistant-connector/ssh-key',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({identity_file:$('hacIdentity').value.trim()})});$('hacResult').textContent='Öffentlichen Schlüssel auf dem SSH-Server in ~/.ssh/authorized_keys eintragen:\n\n'+d.public_key}catch(e){notice(e.message,false)}}
 function noipPayload(){return {enabled:$('noipEnabled').checked,hostname:$('noipHostname').value.trim(),username:$('noipUsername').value.trim(),password:$('noipPassword').value,interval_minutes:Number($('noipInterval').value)}}
