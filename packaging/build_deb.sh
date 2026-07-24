@@ -1,14 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSION="$(tr -d '[:space:]' < "${ROOT_DIR}/version.txt")"
-DEB_VERSION="${VERSION%-dev}~dev"
-ARCH="all"
-PKG="powergateway"
-BUILD_ROOT="${ROOT_DIR}/dist/${PKG}_${DEB_VERSION}_${ARCH}"
-OUTPUT="${ROOT_DIR}/dist/${PKG}_${DEB_VERSION}_${ARCH}.deb"
-
+DEB_VERSION="${VERSION%-dev}~dev"; ARCH="all"; PKG="powergateway"
+BUILD_ROOT="${ROOT_DIR}/dist/${PKG}_${DEB_VERSION}_${ARCH}"; OUTPUT="${ROOT_DIR}/dist/${PKG}_${DEB_VERSION}_${ARCH}.deb"
 rm -rf "${BUILD_ROOT}"
 mkdir -p "${BUILD_ROOT}/DEBIAN" "${BUILD_ROOT}/opt/powergateway" "${BUILD_ROOT}/etc/powergateway" "${BUILD_ROOT}/etc/systemd/system" "${BUILD_ROOT}/usr/share/doc/powergateway"
 cp -a "${ROOT_DIR}/src" "${BUILD_ROOT}/opt/powergateway/src"
@@ -16,7 +11,7 @@ cp -a "${ROOT_DIR}/requirements.txt" "${ROOT_DIR}/version.txt" "${BUILD_ROOT}/op
 install -m 0640 "${ROOT_DIR}/config/config.example.toml" "${BUILD_ROOT}/etc/powergateway/config.toml"
 install -m 0644 "${ROOT_DIR}/config/config.example.toml" "${BUILD_ROOT}/etc/powergateway/config.example.toml"
 cp -a "${ROOT_DIR}/packaging/systemd/." "${BUILD_ROOT}/etc/systemd/system/"
-cp -a "${ROOT_DIR}/README.md" "${ROOT_DIR}/CHANGELOG.md" "${BUILD_ROOT}/usr/share/doc/powergateway/"
+cp -a "${ROOT_DIR}/README.md" "${ROOT_DIR}/CHANGELOG.md" "${ROOT_DIR}/INSTALLATION.md" "${BUILD_ROOT}/usr/share/doc/powergateway/"
 cat > "${BUILD_ROOT}/DEBIAN/control" <<EOF
 Package: ${PKG}
 Version: ${DEB_VERSION}
@@ -24,7 +19,7 @@ Section: net
 Priority: optional
 Architecture: ${ARCH}
 Maintainer: PowerGateway Project
-Depends: python3, python3-venv, python3-pip, network-manager, modemmanager, wireguard-tools, qrencode, sqlite3, openssh-client, autossh
+Depends: python3, python3-venv, python3-pip, network-manager, modemmanager, wireguard-tools, qrencode, sqlite3, openssh-client
 Description: Modulares Stromzaehler-Gateway fuer Raspberry Pi und Debian
  Liest USB-SML- und MQTT-Stromzaehler und uebertraegt Messwerte per MQTT
  inklusive Home-Assistant-Discovery.
@@ -47,11 +42,12 @@ python3 -m venv /opt/powergateway/venv
 /opt/powergateway/venv/bin/pip install --disable-pip-version-check --no-cache-dir -r /opt/powergateway/requirements.txt
 chown -R root:root /opt/powergateway
 chmod 0755 /opt/powergateway/src/*.py
+chown -R powergateway:powergateway /var/lib/powergateway
 systemctl daemon-reload
-systemctl enable powergateway-network.service powergateway.service powergateway-web.service powergateway-config-reload.path powergateway-wireguard-apply.path powergateway-wireguard-status.timer powergateway-noip.timer
+systemctl enable powergateway-network.service powergateway.service powergateway-web.service powergateway-config-reload.path powergateway-wireguard-apply.path powergateway-wireguard-status.timer powergateway-noip.timer powergateway-ha-tunnel.service
 systemctl restart powergateway-network.service || true
 systemctl restart powergateway.service powergateway-web.service || true
-systemctl restart powergateway-config-reload.path powergateway-wireguard-apply.path powergateway-wireguard-status.timer powergateway-noip.timer || true
+systemctl restart powergateway-config-reload.path powergateway-wireguard-apply.path powergateway-wireguard-status.timer powergateway-noip.timer powergateway-ha-tunnel.service || true
 EOF
 chmod 0755 "${BUILD_ROOT}/DEBIAN/postinst"
 cat > "${BUILD_ROOT}/DEBIAN/prerm" <<'EOF'
