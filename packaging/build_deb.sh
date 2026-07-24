@@ -46,6 +46,10 @@ python3 -m venv /opt/powergateway/venv
 chown -R root:root /opt/powergateway
 chmod 0755 /opt/powergateway/src/*.py
 chown -R powergateway:powergateway /var/lib/powergateway
+systemctl disable --now powergateway-reverse-ssh.service >/dev/null 2>&1 || true
+rm -f /etc/systemd/system/powergateway-reverse-ssh.service
+rm -f /var/lib/powergateway/reverse_ssh.json /var/lib/powergateway/reverse_ssh_status.json
+rm -f /var/lib/powergateway/.ssh/reverse_ssh_ed25519 /var/lib/powergateway/.ssh/reverse_ssh_ed25519.pub
 systemctl daemon-reload
 systemctl enable powergateway-network.service powergateway.service powergateway-web.service powergateway-config-reload.path powergateway-wireguard-apply.path powergateway-wireguard-status.timer powergateway-noip.timer
 systemctl restart powergateway-network.service || true
