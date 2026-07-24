@@ -4,7 +4,7 @@ PowerGateway ist ein modulares Raspberry-Pi- und Debian-Gateway für digitale St
 
 ## Aktueller Stand
 
-Entwicklungsversion: **0.9.7-dev**
+Entwicklungsversion: **0.9.12-dev**
 
 Vorhanden sind:
 
@@ -13,13 +13,15 @@ Vorhanden sind:
 - MQTT-Assistent mit Verbindungstest, Topic-Suche und JSON-Feldvorschlägen
 - Home-Assistant-Discovery-Grundlage
 - LAN, WLAN, LTE und Setup-Hotspot
-- WireGuard-Grundlage
+- WireGuard mit Server-, Client- und Peer-Verwaltung
+- SSH- und Reverse-SSH-Verbindung für Home Assistant und MQTT
+- No-IP-DDNS-Schnittstelle mit automatischer Aktualisierung
 - lokale WebGUI
 - einfache Benutzerverwaltung
 - Einrichtungsstatus und Systemdiagnose
-- systemd-Dienste und Installer
+- systemd-Dienste und Debian-Paketbau
 
-Der aktuelle Stand ist noch nicht als stabile Version freigegeben. Reale USB-SML-Geräte, Home Assistant, Netzwerk-Failover, LTE und WireGuard müssen weiter praktisch getestet werden.
+Der aktuelle Stand ist noch nicht als stabile Version freigegeben. Reale USB-SML-Geräte, Home Assistant, Netzwerk-Failover, LTE, WireGuard, SSH-Tunnel und No-IP müssen weiter praktisch getestet werden.
 
 ## Zielhardware
 
@@ -64,12 +66,13 @@ http://IP-DES-GERÄTS:8080
 
 ```bash
 cd ~/PowerGateway
-git pull
+git pull --ff-only
 sudo bash install.sh
 ```
 
 ## Dokumentation
 
+- [Vollständige Installationsanleitung](INSTALLATION.md)
 - [Installation auf Raspberry Pi](docs/installation/RaspberryPi.md)
 - [Home Assistant anbinden](docs/installation/HomeAssistant.md)
 - [MQTT konfigurieren](docs/configuration/MQTT.md)
@@ -87,6 +90,8 @@ PowerGateway übernimmt:
 - MQTT-Ausgabe
 - Home-Assistant-Discovery
 - Netzwerk, LTE, Hotspot und WireGuard
+- SSH-/Reverse-SSH-Verbindungen
+- No-IP-DDNS-Aktualisierung
 - Einrichtung, Status und Diagnose
 
 Home Assistant übernimmt:
@@ -119,6 +124,7 @@ PYTHONPATH=src python3 -m unittest discover -s tests -v
 - integrierte Backup- und Wiederherstellungsverwaltung
 - komplexe Rollenverwaltung
 - Batterie-, Wallbox- oder EMS-Steuerung
+- Unterstützung mehrerer Standorte
 
 ## Lizenz
 
