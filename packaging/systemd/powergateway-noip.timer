@@ -3,7 +3,7 @@ Description=PowerGateway No-IP DDNS Timer
 
 [Timer]
 OnBootSec=2min
-OnUnitActiveSec=10min
+OnUnitActiveSec=5min
 RandomizedDelaySec=30s
 Persistent=true
 Unit=powergateway-noip.service
