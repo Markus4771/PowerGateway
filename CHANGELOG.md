@@ -1,5 +1,17 @@
 # Änderungsprotokoll
 
+## 0.9.19-dev – 2026-07-24
+
+- No-IP um getrennt aktivierbare IPv4- und IPv6-Aktualisierung erweitert
+- Dual-Stack-Updates senden IPv4 und IPv6 gemeinsam an No-IP
+- öffentliche IPv6-Adresse wird über den No-IP-Erkennungsdienst ermittelt
+- DNS-Diagnose prüft A- und AAAA-Records getrennt
+- lokale No-IP-Historie mit den letzten 100 Prüfungen und Änderungen ergänzt
+- WebGUI zeigt die letzten Update-Versuche mit Zeit, Status und Ergebnis
+- optionaler Neustart von SSH-Tunnel und WireGuard bei geänderter öffentlicher IP ergänzt
+- eng begrenzte sudo-Regel für den Neustart von `wg-quick@wg0.service` ergänzt
+- verständliche Fehler für fehlende IPv4-/IPv6-Konnektivität und abgelehnte Update-Clients ergänzt
+
 ## 0.9.18-dev – 2026-07-24
 
 - manuellen Internet-Speedtest in der Systemübersicht ergänzt
