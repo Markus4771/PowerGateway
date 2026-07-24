@@ -1,5 +1,17 @@
 # Änderungsprotokoll
 
+## 0.9.18-dev – 2026-07-24
+
+- manuellen Internet-Speedtest in der Systemübersicht ergänzt
+- Download, Upload, Ping, Jitter, Paketverlust, Testserver und Provider werden soweit verfügbar angezeigt
+- die letzten 50 Speedtests werden lokal gespeichert und können in der WebGUI eingesehen werden
+- Hinweis auf möglichen LTE-Datenverbrauch vor dem Speedtest ergänzt
+- LTE-Empfangsdiagnose über ModemManager und die ZTE-Webschnittstelle ergänzt
+- RSRP, RSRQ, SINR, RSSI, Provider, Netztyp, Funkzelle und LTE-Band werden soweit vom Stick geliefert ausgelesen
+- Signalqualität wird als hervorragend, gut, ausreichend, schlecht oder kritisch bewertet
+- ZTE MF833U1 im CDC-Ethernet-Modus wird über sein LTE-Gateway abgefragt
+- Debian-Paket installiert `speedtest-cli` automatisch
+
 ## 0.9.17-dev – 2026-07-24
 
 - LTE-Erkennung um USB-Ethernet-, CDC-Ethernet-, RNDIS-, NCM-, MBIM- und QMI-Geräte erweitert
