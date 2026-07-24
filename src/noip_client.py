@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""No-IP-DDNS-Konfiguration, intelligente Aktualisierung und Diagnose."""
+"""No-IP-DDNS-Konfiguration, Dual-Stack-Aktualisierung und Diagnose."""
 from __future__ import annotations
 
 import base64
+import ipaddress
 import json
 import os
 import socket
@@ -18,20 +19,27 @@ from typing import Any
 DATA_DIR = Path(os.environ.get("POWERGATEWAY_DATA_DIR", "/var/lib/powergateway"))
 CONFIG_PATH = DATA_DIR / "noip_config.json"
 STATUS_PATH = DATA_DIR / "noip_status.json"
-TUNNEL_SERVICE = "powergateway-ha-tunnel.service"
+HISTORY_PATH = DATA_DIR / "noip_history.json"
+SSH_SERVICE = "powergateway-ha-tunnel.service"
+WIREGUARD_SERVICE = "wg-quick@wg0.service"
+HISTORY_LIMIT = 100
 DEFAULT_CONFIG: dict[str, Any] = {
     "enabled": False,
     "hostname": "",
     "username": "",
     "password": "",
     "update_url": "https://dynupdate.no-ip.com/nic/update",
-    "public_ip_url": "https://api.ipify.org",
+    "public_ip_url": "https://ip1.dynupdate.no-ip.com/",
+    "public_ipv6_url": "https://ip1.dynupdate6.no-ip.com/",
     "interval_minutes": 10,
+    "ipv4_enabled": True,
+    "ipv6_enabled": False,
     "restart_ssh_on_ip_change": True,
+    "restart_wireguard_on_ip_change": False,
 }
 
 
-def _atomic(path: Path, value: dict[str, Any], mode: int = 0o600) -> None:
+def _atomic(path: Path, value: Any, mode: int = 0o600) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     try:
@@ -47,30 +55,52 @@ def _atomic(path: Path, value: dict[str, Any], mode: int = 0o600) -> None:
             pass
 
 
+def _read_json(path: Path, fallback: Any) -> Any:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+        return value
+    except (OSError, ValueError, json.JSONDecodeError):
+        return fallback
+
+
 def load_config() -> dict[str, Any]:
     config = dict(DEFAULT_CONFIG)
-    try:
-        stored = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-        if isinstance(stored, dict):
-            config.update(stored)
-    except (OSError, ValueError, json.JSONDecodeError):
-        pass
+    stored = _read_json(CONFIG_PATH, {})
+    if isinstance(stored, dict):
+        config.update(stored)
     return config
 
 
 def load_status() -> dict[str, Any]:
-    try:
-        value = json.loads(STATUS_PATH.read_text(encoding="utf-8"))
-        return value if isinstance(value, dict) else {}
-    except (OSError, ValueError, json.JSONDecodeError):
-        return {}
+    value = _read_json(STATUS_PATH, {})
+    return value if isinstance(value, dict) else {}
+
+
+def load_history(limit: int = 50) -> list[dict[str, Any]]:
+    value = _read_json(HISTORY_PATH, [])
+    rows = value if isinstance(value, list) else []
+    return [row for row in rows[-max(1, min(limit, HISTORY_LIMIT)):] if isinstance(row, dict)]
+
+
+def _append_history(result: dict[str, Any]) -> None:
+    history = load_history(HISTORY_LIMIT)
+    history.append({
+        "timestamp": int(time.time()),
+        "ok": bool(result.get("ok")),
+        "status": result.get("status", "unknown"),
+        "message": result.get("message", ""),
+        "public_ipv4": result.get("public_ipv4"),
+        "public_ipv6": result.get("public_ipv6"),
+        "ipv4_changed": bool(result.get("ipv4_changed")),
+        "ipv6_changed": bool(result.get("ipv6_changed")),
+    })
+    _atomic(HISTORY_PATH, history[-HISTORY_LIMIT:], 0o640)
 
 
 def public_config(config: dict[str, Any] | None = None) -> dict[str, Any]:
     source = dict(config or load_config())
-    has_password = bool(source.get("password"))
+    source["has_password"] = bool(source.get("password"))
     source["password"] = ""
-    source["has_password"] = has_password
     return source
 
 
@@ -82,9 +112,9 @@ def validate_config(supplied: dict[str, Any]) -> dict[str, Any]:
     config.update(supplied)
     if not str(supplied.get("password", "")).strip():
         config["password"] = current.get("password", "")
-    config["enabled"] = bool(config.get("enabled"))
-    config["restart_ssh_on_ip_change"] = bool(config.get("restart_ssh_on_ip_change", True))
-    for field in ("hostname", "username", "password", "update_url", "public_ip_url"):
+    for field in ("enabled", "ipv4_enabled", "ipv6_enabled", "restart_ssh_on_ip_change", "restart_wireguard_on_ip_change"):
+        config[field] = bool(config.get(field))
+    for field in ("hostname", "username", "password", "update_url", "public_ip_url", "public_ipv6_url"):
         config[field] = str(config.get(field, "")).strip()
     try:
         interval = int(config.get("interval_minutes", 10))
@@ -93,6 +123,8 @@ def validate_config(supplied: dict[str, Any]) -> dict[str, Any]:
     if interval < 5 or interval > 1440:
         raise ValueError("Das No-IP-Intervall muss zwischen 5 und 1440 Minuten liegen")
     config["interval_minutes"] = interval
+    if config["enabled"] and not (config["ipv4_enabled"] or config["ipv6_enabled"]):
+        raise ValueError("Mindestens IPv4 oder IPv6 muss aktiviert sein")
     if config["enabled"] and (not config["hostname"] or not config["username"] or not config["password"]):
         raise ValueError("Für No-IP fehlen Hostname, Benutzername oder Passwort")
     return config
@@ -104,62 +136,78 @@ def save_config(supplied: dict[str, Any]) -> dict[str, Any]:
     return config
 
 
-def public_ip(config: dict[str, Any] | None = None) -> str:
-    config = config or load_config()
-    request = urllib.request.Request(str(config["public_ip_url"]), headers={"User-Agent": "PowerGateway/1.0"})
+def _public_address(url: str, family: int) -> str:
+    request = urllib.request.Request(url, headers={"User-Agent": "PowerGateway DDNS/Linux-0.9 maintainer@localhost"})
     with urllib.request.urlopen(request, timeout=10) as response:
-        value = response.read(128).decode("ascii", errors="replace").strip()
-    socket.inet_pton(socket.AF_INET, value)
+        value = response.read(256).decode("ascii", errors="replace").strip()
+    ip = ipaddress.ip_address(value)
+    if (family == socket.AF_INET and ip.version != 4) or (family == socket.AF_INET6 and ip.version != 6):
+        raise ValueError(f"Unerwartete IP-Version: {value}")
     return value
 
 
-def _restart_ssh_tunnel() -> dict[str, Any]:
+def public_ip(config: dict[str, Any] | None = None) -> str:
+    config = config or load_config()
+    return _public_address(str(config["public_ip_url"]), socket.AF_INET)
+
+
+def public_ipv6(config: dict[str, Any] | None = None) -> str:
+    config = config or load_config()
+    return _public_address(str(config["public_ipv6_url"]), socket.AF_INET6)
+
+
+def _restart_service(service: str, label: str) -> dict[str, Any]:
     try:
-        state = subprocess.run(
-            ["/usr/bin/systemctl", "is-active", TUNNEL_SERVICE],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
+        state = subprocess.run(["/usr/bin/systemctl", "is-active", service], capture_output=True, text=True, timeout=5, check=False)
         if state.stdout.strip() != "active":
-            return {"requested": False, "ok": True, "message": "SSH-Tunnel ist nicht aktiv"}
-        result = subprocess.run(
-            ["sudo", "-n", "/usr/bin/systemctl", "restart", TUNNEL_SERVICE],
-            capture_output=True,
-            text=True,
-            timeout=20,
-            check=False,
-        )
-        return {
-            "requested": True,
-            "ok": result.returncode == 0,
-            "message": result.stderr.strip() or result.stdout.strip() or "SSH-Tunnel wurde neu gestartet",
-        }
+            return {"requested": False, "ok": True, "message": f"{label} ist nicht aktiv"}
+        result = subprocess.run(["sudo", "-n", "/usr/bin/systemctl", "restart", service], capture_output=True, text=True, timeout=30, check=False)
+        return {"requested": True, "ok": result.returncode == 0, "message": result.stderr.strip() or result.stdout.strip() or f"{label} wurde neu gestartet"}
     except (OSError, subprocess.TimeoutExpired) as exc:
         return {"requested": True, "ok": False, "message": str(exc)}
+
+
+def _resolve(hostname: str, family: int) -> list[str]:
+    if not hostname:
+        return []
+    return sorted({entry[4][0] for entry in socket.getaddrinfo(hostname, None, family, socket.SOCK_STREAM)})
 
 
 def diagnostics(config: dict[str, Any] | None = None) -> dict[str, Any]:
     config = config or load_config()
     checks: dict[str, Any] = {}
+    if config.get("ipv4_enabled", True):
+        try:
+            value = public_ip(config)
+            checks["public_ipv4"] = {"ok": True, "message": value, "value": value}
+        except (OSError, ValueError, urllib.error.URLError) as exc:
+            checks["public_ipv4"] = {"ok": False, "message": str(exc)}
+    if config.get("ipv6_enabled"):
+        try:
+            value = public_ipv6(config)
+            checks["public_ipv6"] = {"ok": True, "message": value, "value": value}
+        except (OSError, ValueError, urllib.error.URLError) as exc:
+            checks["public_ipv6"] = {"ok": False, "message": str(exc)}
     try:
-        ip = public_ip(config)
-        checks["public_ip"] = {"ok": True, "message": ip, "value": ip}
-    except (OSError, ValueError, urllib.error.URLError) as exc:
-        checks["public_ip"] = {"ok": False, "message": str(exc)}
-    try:
-        resolved = socket.gethostbyname(str(config.get("hostname", ""))) if config.get("hostname") else ""
-        checks["hostname_dns"] = {"ok": bool(resolved), "message": resolved or "Kein Hostname konfiguriert", "value": resolved}
+        ipv4 = _resolve(str(config.get("hostname", "")), socket.AF_INET)
+        checks["dns_a"] = {"ok": bool(ipv4) if config.get("ipv4_enabled", True) else True, "message": ", ".join(ipv4) or "Kein A-Record gefunden", "values": ipv4}
     except OSError as exc:
-        checks["hostname_dns"] = {"ok": False, "message": str(exc)}
+        checks["dns_a"] = {"ok": False, "message": str(exc)}
+    try:
+        ipv6 = _resolve(str(config.get("hostname", "")), socket.AF_INET6)
+        checks["dns_aaaa"] = {"ok": bool(ipv6) if config.get("ipv6_enabled") else True, "message": ", ".join(ipv6) or "Kein AAAA-Record gefunden", "values": ipv6}
+    except OSError as exc:
+        checks["dns_aaaa"] = {"ok": not config.get("ipv6_enabled"), "message": str(exc)}
     status = load_status()
-    checks["last_update"] = {
-        "ok": bool(status.get("ok")),
-        "message": str(status.get("message", "Noch kein Update ausgeführt")),
-        "status": status.get("status", "unknown"),
-    }
-    return {"ok": all(item.get("ok", False) for item in checks.values()), "checks": checks, "status": status}
+    checks["last_update"] = {"ok": bool(status.get("ok")), "message": str(status.get("message", "Noch kein Update ausgeführt")), "status": status.get("status", "unknown")}
+    return {"ok": all(item.get("ok", False) for item in checks.values()), "checks": checks, "status": status, "history": load_history(20)}
+
+
+def _finish(result: dict[str, Any], save_status: bool = True) -> dict[str, Any]:
+    if save_status:
+        _atomic(STATUS_PATH, result, 0o640)
+        _append_history(result)
+    return result
 
 
 def update(config: dict[str, Any] | None = None, address: str | None = None, force: bool = False) -> dict[str, Any]:
@@ -168,109 +216,81 @@ def update(config: dict[str, Any] | None = None, address: str | None = None, for
     previous = load_status()
     interval_seconds = int(config["interval_minutes"]) * 60
     next_due = int(previous.get("last_attempt_at", 0)) + interval_seconds
-
     if not config.get("enabled"):
-        result = {"ok": False, "status": "disabled", "message": "No-IP ist deaktiviert", "last_attempt_at": now}
-        _atomic(STATUS_PATH, result, 0o640)
-        return result
+        return _finish({"ok": False, "status": "disabled", "message": "No-IP ist deaktiviert", "last_attempt_at": now})
     if not force and previous.get("last_attempt_at") and now < next_due:
         result = dict(previous)
         result.update({"status": "not_due", "message": "Das konfigurierte Update-Intervall ist noch nicht erreicht", "next_update_at": next_due})
         return result
 
-    try:
-        ip = address or public_ip(config)
-    except (OSError, ValueError, urllib.error.URLError) as exc:
-        result = {
-            "ok": False,
-            "status": "public_ip_error",
-            "message": str(exc),
-            "last_attempt_at": now,
-            "next_update_at": now + interval_seconds,
-        }
-        _atomic(STATUS_PATH, result, 0o640)
-        return result
+    ipv4 = None
+    ipv6 = None
+    errors: list[str] = []
+    if config.get("ipv4_enabled", True):
+        try:
+            ipv4 = address or public_ip(config)
+        except (OSError, ValueError, urllib.error.URLError) as exc:
+            errors.append(f"IPv4: {exc}")
+    if config.get("ipv6_enabled"):
+        try:
+            ipv6 = public_ipv6(config)
+        except (OSError, ValueError, urllib.error.URLError) as exc:
+            errors.append(f"IPv6: {exc}")
+    if errors:
+        return _finish({"ok": False, "status": "public_ip_error", "message": "; ".join(errors), "last_attempt_at": now, "next_update_at": now + interval_seconds})
 
-    old_ip = str(previous.get("public_ip", ""))
-    changed = bool(old_ip and old_ip != ip)
-    if not force and old_ip == ip and previous.get("ok"):
+    old4 = str(previous.get("public_ipv4") or previous.get("public_ip") or "")
+    old6 = str(previous.get("public_ipv6") or "")
+    changed4 = bool(ipv4 and old4 and old4 != ipv4)
+    changed6 = bool(ipv6 and old6 and old6 != ipv6)
+    unchanged = (not ipv4 or old4 == ipv4) and (not ipv6 or old6 == ipv6)
+    if not force and unchanged and previous.get("ok"):
         result = dict(previous)
-        result.update({
-            "ok": True,
-            "status": "unchanged",
-            "message": "Öffentliche IP ist unverändert; kein No-IP-Update erforderlich",
-            "public_ip": ip,
-            "ip_changed": False,
-            "last_attempt_at": now,
-            "next_update_at": now + interval_seconds,
-        })
-        _atomic(STATUS_PATH, result, 0o640)
-        return result
+        result.update({"ok": True, "status": "unchanged", "message": "Öffentliche IP-Adressen sind unverändert", "public_ipv4": ipv4, "public_ipv6": ipv6, "ipv4_changed": False, "ipv6_changed": False, "last_attempt_at": now, "next_update_at": now + interval_seconds})
+        return _finish(result)
 
-    query = urllib.parse.urlencode({"hostname": config["hostname"], "myip": ip})
+    addresses = [value for value in (ipv4, ipv6) if value]
+    query = urllib.parse.urlencode({"hostname": config["hostname"], "myip": ",".join(addresses)})
     token = base64.b64encode(f"{config['username']}:{config['password']}".encode()).decode()
-    request = urllib.request.Request(
-        f"{config['update_url']}?{query}",
-        headers={"Authorization": f"Basic {token}", "User-Agent": "PowerGateway/1.0 admin@localhost"},
-    )
+    request = urllib.request.Request(f"{config['update_url']}?{query}", headers={"Authorization": f"Basic {token}", "User-Agent": "PowerGateway DDNS/Linux-0.9 maintainer@localhost"})
     try:
         with urllib.request.urlopen(request, timeout=15) as response:
             body = response.read(512).decode("utf-8", errors="replace").strip()
     except urllib.error.HTTPError as exc:
         body = exc.read(512).decode("utf-8", errors="replace").strip()
-        result = {
-            "ok": False,
-            "status": "http_error",
-            "message": body or str(exc),
-            "public_ip": ip,
-            "ip_changed": changed,
-            "last_attempt_at": now,
-            "next_update_at": now + interval_seconds,
-        }
-        _atomic(STATUS_PATH, result, 0o640)
-        return result
+        return _finish({"ok": False, "status": "http_error", "message": body or str(exc), "public_ipv4": ipv4, "public_ipv6": ipv6, "last_attempt_at": now, "next_update_at": now + interval_seconds})
     except urllib.error.URLError as exc:
-        result = {
-            "ok": False,
-            "status": "network_error",
-            "message": str(exc),
-            "public_ip": ip,
-            "ip_changed": changed,
-            "last_attempt_at": now,
-            "next_update_at": now + interval_seconds,
-        }
-        _atomic(STATUS_PATH, result, 0o640)
-        return result
+        return _finish({"ok": False, "status": "network_error", "message": str(exc), "public_ipv4": ipv4, "public_ipv6": ipv6, "last_attempt_at": now, "next_update_at": now + interval_seconds})
 
     code = body.split()[0].lower() if body else "empty"
     ok = code in {"good", "nochg"}
-    messages = {
-        "good": "Hostname wurde aktualisiert",
-        "nochg": "Hostname war bereits aktuell",
-        "badauth": "No-IP-Anmeldung fehlgeschlagen",
-        "nohost": "Der No-IP-Hostname wurde nicht gefunden",
-        "abuse": "Der No-IP-Hostname ist gesperrt",
-        "911": "No-IP meldet eine vorübergehende Störung",
-    }
-    tunnel = {"requested": False, "ok": True, "message": "Kein Neustart erforderlich"}
-    if ok and changed and config.get("restart_ssh_on_ip_change", True):
-        tunnel = _restart_ssh_tunnel()
+    messages = {"good": "Hostname wurde aktualisiert", "nochg": "Hostname war bereits aktuell", "badauth": "No-IP-Anmeldung fehlgeschlagen", "badagent": "No-IP hat den Update-Client abgelehnt", "nohost": "Der No-IP-Hostname wurde nicht gefunden", "abuse": "Der No-IP-Hostname ist gesperrt", "911": "No-IP meldet eine vorübergehende Störung"}
+    any_changed = changed4 or changed6
+    ssh = {"requested": False, "ok": True, "message": "Kein Neustart erforderlich"}
+    wireguard = {"requested": False, "ok": True, "message": "Kein Neustart erforderlich"}
+    if ok and any_changed and config.get("restart_ssh_on_ip_change", True):
+        ssh = _restart_service(SSH_SERVICE, "SSH-Tunnel")
+    if ok and any_changed and config.get("restart_wireguard_on_ip_change"):
+        wireguard = _restart_service(WIREGUARD_SERVICE, "WireGuard")
     result = {
         "ok": ok,
         "status": code,
         "message": messages.get(code, body or "Unbekannte No-IP-Antwort"),
         "response": body,
-        "public_ip": ip,
-        "previous_public_ip": old_ip,
-        "ip_changed": changed,
+        "public_ipv4": ipv4,
+        "previous_public_ipv4": old4,
+        "public_ipv6": ipv6,
+        "previous_public_ipv6": old6,
+        "ipv4_changed": changed4,
+        "ipv6_changed": changed6,
         "hostname": config["hostname"],
         "last_attempt_at": now,
         "last_success_at": now if ok else previous.get("last_success_at"),
         "next_update_at": now + interval_seconds,
-        "ssh_tunnel": tunnel,
+        "ssh_tunnel": ssh,
+        "wireguard": wireguard,
     }
-    _atomic(STATUS_PATH, result, 0o640)
-    return result
+    return _finish(result)
 
 
 if __name__ == "__main__":
