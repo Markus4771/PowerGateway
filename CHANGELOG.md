@@ -1,5 +1,16 @@
 # Änderungsprotokoll
 
+## 0.9.13-dev – 2026-07-24
+
+- produktiven SSH- und Reverse-SSH-Tunnelprozess ergänzt
+- automatische Wiederverbindung über systemd umgesetzt
+- Keepalive, Verbindungs-Timeout und Prüfung der Portweiterleitung ergänzt
+- sichere ED25519-Schlüssel- und Known-Hosts-Nutzung vorbereitet
+- Statusdatei für Start, Laufzeit und Fehler ergänzt
+- Starten, Stoppen und Neustarten des Tunnels in der WebGUI ergänzt
+- Dienststatus und Journal-Protokolle in der WebGUI ergänzt
+- Installer und Debian-Paket um den SSH-Tunneldienst erweitert
+
 ## 0.9.11-dev – 2026-07-22
 
 - WireGuard-Zentrale mit Server- und Client-Modus vervollständigt
