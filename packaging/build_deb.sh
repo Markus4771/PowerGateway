@@ -5,12 +5,13 @@ VERSION="$(tr -d '[:space:]' < "${ROOT_DIR}/version.txt")"
 DEB_VERSION="${VERSION%-dev}~dev"; ARCH="all"; PKG="powergateway"
 BUILD_ROOT="${ROOT_DIR}/dist/${PKG}_${DEB_VERSION}_${ARCH}"; OUTPUT="${ROOT_DIR}/dist/${PKG}_${DEB_VERSION}_${ARCH}.deb"
 rm -rf "${BUILD_ROOT}"
-mkdir -p "${BUILD_ROOT}/DEBIAN" "${BUILD_ROOT}/opt/powergateway" "${BUILD_ROOT}/etc/powergateway" "${BUILD_ROOT}/etc/systemd/system" "${BUILD_ROOT}/usr/share/doc/powergateway"
+mkdir -p "${BUILD_ROOT}/DEBIAN" "${BUILD_ROOT}/opt/powergateway" "${BUILD_ROOT}/etc/powergateway" "${BUILD_ROOT}/etc/systemd/system" "${BUILD_ROOT}/etc/sudoers.d" "${BUILD_ROOT}/usr/share/doc/powergateway"
 cp -a "${ROOT_DIR}/src" "${BUILD_ROOT}/opt/powergateway/src"
 cp -a "${ROOT_DIR}/requirements.txt" "${ROOT_DIR}/version.txt" "${BUILD_ROOT}/opt/powergateway/"
 install -m 0640 "${ROOT_DIR}/config/config.example.toml" "${BUILD_ROOT}/etc/powergateway/config.toml"
 install -m 0644 "${ROOT_DIR}/config/config.example.toml" "${BUILD_ROOT}/etc/powergateway/config.example.toml"
 cp -a "${ROOT_DIR}/packaging/systemd/." "${BUILD_ROOT}/etc/systemd/system/"
+install -m 0440 "${ROOT_DIR}/packaging/sudoers/powergateway-ha-tunnel" "${BUILD_ROOT}/etc/sudoers.d/powergateway-ha-tunnel"
 cp -a "${ROOT_DIR}/README.md" "${ROOT_DIR}/CHANGELOG.md" "${ROOT_DIR}/INSTALLATION.md" "${BUILD_ROOT}/usr/share/doc/powergateway/"
 cat > "${BUILD_ROOT}/DEBIAN/control" <<EOF
 Package: ${PKG}
@@ -19,7 +20,7 @@ Section: net
 Priority: optional
 Architecture: ${ARCH}
 Maintainer: PowerGateway Project
-Depends: python3, python3-venv, python3-pip, network-manager, modemmanager, wireguard-tools, qrencode, sqlite3, openssh-client
+Depends: python3, python3-venv, python3-pip, network-manager, modemmanager, wireguard-tools, qrencode, sqlite3, openssh-client, sudo
 Description: Modulares Stromzaehler-Gateway fuer Raspberry Pi und Debian
  Liest USB-SML- und MQTT-Stromzaehler und uebertraegt Messwerte per MQTT
  inklusive Home-Assistant-Discovery.
@@ -38,16 +39,23 @@ install -d -o powergateway -g powergateway -m 0700 /var/lib/powergateway/.ssh
 install -d -m 0750 -o root -g powergateway /etc/powergateway
 chown root:powergateway /etc/powergateway/config.toml /etc/powergateway/config.example.toml 2>/dev/null || true
 chmod 0640 /etc/powergateway/config.toml 2>/dev/null || true
+chmod 0440 /etc/sudoers.d/powergateway-ha-tunnel 2>/dev/null || true
+visudo -cf /etc/sudoers.d/powergateway-ha-tunnel
 python3 -m venv /opt/powergateway/venv
 /opt/powergateway/venv/bin/pip install --disable-pip-version-check --no-cache-dir -r /opt/powergateway/requirements.txt
 chown -R root:root /opt/powergateway
 chmod 0755 /opt/powergateway/src/*.py
 chown -R powergateway:powergateway /var/lib/powergateway
 systemctl daemon-reload
-systemctl enable powergateway-network.service powergateway.service powergateway-web.service powergateway-config-reload.path powergateway-wireguard-apply.path powergateway-wireguard-status.timer powergateway-noip.timer powergateway-ha-tunnel.service
+systemctl enable powergateway-network.service powergateway.service powergateway-web.service powergateway-config-reload.path powergateway-wireguard-apply.path powergateway-wireguard-status.timer powergateway-noip.timer
 systemctl restart powergateway-network.service || true
 systemctl restart powergateway.service powergateway-web.service || true
-systemctl restart powergateway-config-reload.path powergateway-wireguard-apply.path powergateway-wireguard-status.timer powergateway-noip.timer powergateway-ha-tunnel.service || true
+systemctl restart powergateway-config-reload.path powergateway-wireguard-apply.path powergateway-wireguard-status.timer powergateway-noip.timer || true
+if [[ -f /var/lib/powergateway/homeassistant_connector.json ]] && grep -Eq '"mode"[[:space:]]*:[[:space:]]*"(ssh_mqtt|reverse_ssh_mqtt)"' /var/lib/powergateway/homeassistant_connector.json && grep -Eq '"enabled"[[:space:]]*:[[:space:]]*true' /var/lib/powergateway/homeassistant_connector.json; then
+  systemctl enable --now powergateway-ha-tunnel.service || true
+else
+  systemctl disable --now powergateway-ha-tunnel.service >/dev/null 2>&1 || true
+fi
 EOF
 chmod 0755 "${BUILD_ROOT}/DEBIAN/postinst"
 cat > "${BUILD_ROOT}/DEBIAN/prerm" <<'EOF'
