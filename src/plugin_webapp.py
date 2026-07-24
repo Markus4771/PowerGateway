@@ -8,6 +8,7 @@ import homeassistant_runtime
 import ssh_tunnel_web
 import dashboard_runtime
 import lte_diagnostics
+import gateway_selector
 from plugin_runtime import manager, module_status
 app=features.app
 legacy=features.legacy
