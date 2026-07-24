@@ -20,7 +20,7 @@ Section: net
 Priority: optional
 Architecture: ${ARCH}
 Maintainer: PowerGateway Project
-Depends: python3, python3-venv, python3-pip, network-manager, modemmanager, wireguard-tools, qrencode, sqlite3, openssh-client, sudo
+Depends: python3, python3-venv, python3-pip, network-manager, modemmanager, wireguard-tools, qrencode, sqlite3, openssh-client, sudo, speedtest-cli
 Description: Modulares Stromzaehler-Gateway fuer Raspberry Pi und Debian
  Liest USB-SML- und MQTT-Stromzaehler und uebertraegt Messwerte per MQTT
  inklusive Home-Assistant-Discovery.
