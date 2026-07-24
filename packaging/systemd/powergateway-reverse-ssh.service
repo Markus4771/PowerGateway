@@ -1,0 +1,24 @@
+[Unit]
+Description=PowerGateway Reverse-SSH-Fernzugriff
+After=network-online.target ssh.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=powergateway
+Group=powergateway
+WorkingDirectory=/opt/powergateway/src
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/powergateway/venv/bin/python /opt/powergateway/src/reverse_ssh.py
+Restart=always
+RestartSec=10
+StartLimitIntervalSec=0
+TimeoutStopSec=15
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/powergateway
+
+[Install]
+WantedBy=multi-user.target
