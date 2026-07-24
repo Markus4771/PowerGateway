@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""No-IP-DDNS-Konfiguration, Dual-Stack-Aktualisierung und Diagnose."""
+"""No-IP-DDNS mit Dual Stack, Multi-WAN, Fallback-Diensten und Diagnose."""
 from __future__ import annotations
 
 import base64
@@ -20,22 +20,39 @@ DATA_DIR = Path(os.environ.get("POWERGATEWAY_DATA_DIR", "/var/lib/powergateway")
 CONFIG_PATH = DATA_DIR / "noip_config.json"
 STATUS_PATH = DATA_DIR / "noip_status.json"
 HISTORY_PATH = DATA_DIR / "noip_history.json"
+NETWORK_CONFIG_PATH = DATA_DIR / "network_config.json"
+NETWORK_STATUS_PATH = DATA_DIR / "network_status.json"
 SSH_SERVICE = "powergateway-ha-tunnel.service"
 WIREGUARD_SERVICE = "wg-quick@wg0.service"
 HISTORY_LIMIT = 100
+
+IPV4_SERVICES = [
+    "https://ip1.dynupdate.no-ip.com/",
+    "https://api.ipify.org",
+    "https://checkip.amazonaws.com",
+    "https://ifconfig.me/ip",
+]
+IPV6_SERVICES = [
+    "https://ip1.dynupdate6.no-ip.com/",
+    "https://api64.ipify.org",
+    "https://ifconfig.me/ip",
+]
+
 DEFAULT_CONFIG: dict[str, Any] = {
     "enabled": False,
     "hostname": "",
     "username": "",
     "password": "",
     "update_url": "https://dynupdate.no-ip.com/nic/update",
-    "public_ip_url": "https://ip1.dynupdate.no-ip.com/",
-    "public_ipv6_url": "https://ip1.dynupdate6.no-ip.com/",
+    "public_ip_url": IPV4_SERVICES[0],
+    "public_ipv6_url": IPV6_SERVICES[0],
     "interval_minutes": 10,
     "ipv4_enabled": True,
     "ipv6_enabled": False,
     "restart_ssh_on_ip_change": True,
     "restart_wireguard_on_ip_change": False,
+    "interface_mode": "active",
+    "interface": "",
 }
 
 
@@ -57,8 +74,7 @@ def _atomic(path: Path, value: Any, mode: int = 0o600) -> None:
 
 def _read_json(path: Path, fallback: Any) -> Any:
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-        return value
+        return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError, json.JSONDecodeError):
         return fallback
 
@@ -89,8 +105,11 @@ def _append_history(result: dict[str, Any]) -> None:
         "ok": bool(result.get("ok")),
         "status": result.get("status", "unknown"),
         "message": result.get("message", ""),
+        "interface": result.get("interface"),
         "public_ipv4": result.get("public_ipv4"),
         "public_ipv6": result.get("public_ipv6"),
+        "ipv4_service": result.get("ipv4_service"),
+        "ipv6_service": result.get("ipv6_service"),
         "ipv4_changed": bool(result.get("ipv4_changed")),
         "ipv6_changed": bool(result.get("ipv6_changed")),
     })
@@ -114,8 +133,10 @@ def validate_config(supplied: dict[str, Any]) -> dict[str, Any]:
         config["password"] = current.get("password", "")
     for field in ("enabled", "ipv4_enabled", "ipv6_enabled", "restart_ssh_on_ip_change", "restart_wireguard_on_ip_change"):
         config[field] = bool(config.get(field))
-    for field in ("hostname", "username", "password", "update_url", "public_ip_url", "public_ipv6_url"):
+    for field in ("hostname", "username", "password", "update_url", "public_ip_url", "public_ipv6_url", "interface", "interface_mode"):
         config[field] = str(config.get(field, "")).strip()
+    if config["interface_mode"] not in {"active", "auto", "lan", "wifi", "lte", "custom"}:
+        raise ValueError("Ungültige DDNS-Schnittstellenauswahl")
     try:
         interval = int(config.get("interval_minutes", 10))
     except (TypeError, ValueError) as exc:
@@ -136,24 +157,79 @@ def save_config(supplied: dict[str, Any]) -> dict[str, Any]:
     return config
 
 
-def _public_address(url: str, family: int) -> str:
-    request = urllib.request.Request(url, headers={"User-Agent": "PowerGateway DDNS/Linux-0.9 maintainer@localhost"})
-    with urllib.request.urlopen(request, timeout=10) as response:
-        value = response.read(256).decode("ascii", errors="replace").strip()
+def _interface_from_kind(kind: str) -> str:
+    status = _read_json(NETWORK_STATUS_PATH, {})
+    link = status.get(kind, {}) if isinstance(status, dict) else {}
+    if isinstance(link, dict) and link.get("interface"):
+        return str(link["interface"])
+    defaults = {"lan": "eth0", "wifi": "wlan0", "lte": "eth1"}
+    return defaults.get(kind, "")
+
+
+def selected_interface(config: dict[str, Any] | None = None) -> str:
+    config = config or load_config()
+    mode = str(config.get("interface_mode", "active"))
+    if mode == "custom":
+        return str(config.get("interface", "")).strip()
+    if mode in {"lan", "wifi", "lte"}:
+        return _interface_from_kind(mode)
+    if mode == "active":
+        status = _read_json(NETWORK_STATUS_PATH, {})
+        active = str(status.get("active", "")) if isinstance(status, dict) else ""
+        if active in {"lan", "wifi", "lte"}:
+            return _interface_from_kind(active)
+        network = _read_json(NETWORK_CONFIG_PATH, {})
+        preferred = str(network.get("preferred_gateway", "auto")) if isinstance(network, dict) else "auto"
+        if preferred in {"lan", "wifi", "lte"}:
+            return _interface_from_kind(preferred)
+    return ""
+
+
+def _curl_address(url: str, family: int, interface: str = "", timeout: int = 10) -> tuple[str, float]:
+    command = ["/usr/bin/curl", "--silent", "--show-error", "--fail", "--max-time", str(timeout)]
+    command.append("-4" if family == socket.AF_INET else "-6")
+    if interface:
+        command.extend(["--interface", interface])
+    command.append(url)
+    started = time.monotonic()
+    result = subprocess.run(command, capture_output=True, text=True, timeout=timeout + 3, check=False)
+    elapsed = round((time.monotonic() - started) * 1000)
+    if result.returncode != 0:
+        raise OSError(result.stderr.strip() or result.stdout.strip() or f"curl Fehler {result.returncode}")
+    value = result.stdout.strip()
     ip = ipaddress.ip_address(value)
-    if (family == socket.AF_INET and ip.version != 4) or (family == socket.AF_INET6 and ip.version != 6):
+    expected = 4 if family == socket.AF_INET else 6
+    if ip.version != expected:
         raise ValueError(f"Unerwartete IP-Version: {value}")
-    return value
+    return value, elapsed
+
+
+def _service_list(config: dict[str, Any], family: int) -> list[str]:
+    configured = str(config.get("public_ip_url" if family == socket.AF_INET else "public_ipv6_url", "")).strip()
+    defaults = IPV4_SERVICES if family == socket.AF_INET else IPV6_SERVICES
+    return list(dict.fromkeys([configured, *defaults])) if configured else list(defaults)
+
+
+def detect_public_address(config: dict[str, Any] | None, family: int, interface: str | None = None) -> dict[str, Any]:
+    config = config or load_config()
+    interface = selected_interface(config) if interface is None else interface
+    attempts: list[dict[str, Any]] = []
+    for url in _service_list(config, family):
+        try:
+            address, latency = _curl_address(url, family, interface)
+            return {"ok": True, "address": address, "service": url, "latency_ms": latency, "interface": interface or "Standardroute", "attempts": attempts}
+        except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+            attempts.append({"service": url, "error": str(exc)})
+    label = "IPv4" if family == socket.AF_INET else "IPv6"
+    raise OSError(f"{label} konnte über keine IP-Erkennung ermittelt werden: " + "; ".join(f"{x['service']}: {x['error']}" for x in attempts))
 
 
 def public_ip(config: dict[str, Any] | None = None) -> str:
-    config = config or load_config()
-    return _public_address(str(config["public_ip_url"]), socket.AF_INET)
+    return str(detect_public_address(config, socket.AF_INET)["address"])
 
 
 def public_ipv6(config: dict[str, Any] | None = None) -> str:
-    config = config or load_config()
-    return _public_address(str(config["public_ipv6_url"]), socket.AF_INET6)
+    return str(detect_public_address(config, socket.AF_INET6)["address"])
 
 
 def _restart_service(service: str, label: str) -> dict[str, Any]:
@@ -173,21 +249,38 @@ def _resolve(hostname: str, family: int) -> list[str]:
     return sorted({entry[4][0] for entry in socket.getaddrinfo(hostname, None, family, socket.SOCK_STREAM)})
 
 
+def multiwan_diagnostics(config: dict[str, Any] | None = None) -> dict[str, Any]:
+    config = config or load_config()
+    rows: dict[str, Any] = {}
+    for kind in ("lan", "wifi", "lte"):
+        interface = _interface_from_kind(kind)
+        if not Path("/sys/class/net", interface).exists():
+            rows[kind] = {"ok": False, "interface": interface, "message": "Schnittstelle nicht vorhanden"}
+            continue
+        try:
+            result = detect_public_address(config, socket.AF_INET, interface)
+            rows[kind] = {"ok": True, **result}
+        except OSError as exc:
+            rows[kind] = {"ok": False, "interface": interface, "message": str(exc)}
+    return rows
+
+
 def diagnostics(config: dict[str, Any] | None = None) -> dict[str, Any]:
     config = config or load_config()
     checks: dict[str, Any] = {}
+    interface = selected_interface(config)
     if config.get("ipv4_enabled", True):
         try:
-            value = public_ip(config)
-            checks["public_ipv4"] = {"ok": True, "message": value, "value": value}
-        except (OSError, ValueError, urllib.error.URLError) as exc:
-            checks["public_ipv4"] = {"ok": False, "message": str(exc)}
+            result = detect_public_address(config, socket.AF_INET, interface)
+            checks["public_ipv4"] = {"ok": True, "message": result["address"], **result}
+        except OSError as exc:
+            checks["public_ipv4"] = {"ok": False, "message": str(exc), "interface": interface}
     if config.get("ipv6_enabled"):
         try:
-            value = public_ipv6(config)
-            checks["public_ipv6"] = {"ok": True, "message": value, "value": value}
-        except (OSError, ValueError, urllib.error.URLError) as exc:
-            checks["public_ipv6"] = {"ok": False, "message": str(exc)}
+            result = detect_public_address(config, socket.AF_INET6, interface)
+            checks["public_ipv6"] = {"ok": True, "message": result["address"], **result}
+        except OSError as exc:
+            checks["public_ipv6"] = {"ok": False, "message": str(exc), "interface": interface}
     try:
         ipv4 = _resolve(str(config.get("hostname", "")), socket.AF_INET)
         checks["dns_a"] = {"ok": bool(ipv4) if config.get("ipv4_enabled", True) else True, "message": ", ".join(ipv4) or "Kein A-Record gefunden", "values": ipv4}
@@ -200,7 +293,7 @@ def diagnostics(config: dict[str, Any] | None = None) -> dict[str, Any]:
         checks["dns_aaaa"] = {"ok": not config.get("ipv6_enabled"), "message": str(exc)}
     status = load_status()
     checks["last_update"] = {"ok": bool(status.get("ok")), "message": str(status.get("message", "Noch kein Update ausgeführt")), "status": status.get("status", "unknown")}
-    return {"ok": all(item.get("ok", False) for item in checks.values()), "checks": checks, "status": status, "history": load_history(20)}
+    return {"ok": all(item.get("ok", False) for item in checks.values()), "selected_interface": interface or "Standardroute", "checks": checks, "multiwan": multiwan_diagnostics(config), "status": status, "history": load_history(20)}
 
 
 def _finish(result: dict[str, Any], save_status: bool = True) -> dict[str, Any]:
@@ -210,34 +303,49 @@ def _finish(result: dict[str, Any], save_status: bool = True) -> dict[str, Any]:
     return result
 
 
+def _noip_request(config: dict[str, Any], addresses: list[str], interface: str) -> tuple[int, str]:
+    query = urllib.parse.urlencode({"hostname": config["hostname"], "myip": ",".join(addresses)})
+    url = f"{config['update_url']}?{query}"
+    command = ["/usr/bin/curl", "--silent", "--show-error", "--max-time", "20", "--user", f"{config['username']}:{config['password']}", "--user-agent", "PowerGateway DDNS/Linux-0.9 maintainer@localhost"]
+    if interface:
+        command.extend(["--interface", interface])
+    command.append(url)
+    result = subprocess.run(command, capture_output=True, text=True, timeout=25, check=False)
+    return result.returncode, result.stdout.strip() or result.stderr.strip()
+
+
 def update(config: dict[str, Any] | None = None, address: str | None = None, force: bool = False) -> dict[str, Any]:
     config = validate_config(config or load_config())
     now = int(time.time())
     previous = load_status()
     interval_seconds = int(config["interval_minutes"]) * 60
     next_due = int(previous.get("last_attempt_at", 0)) + interval_seconds
+    interface = selected_interface(config)
     if not config.get("enabled"):
-        return _finish({"ok": False, "status": "disabled", "message": "No-IP ist deaktiviert", "last_attempt_at": now})
+        return _finish({"ok": False, "status": "disabled", "message": "No-IP ist deaktiviert", "interface": interface or "Standardroute", "last_attempt_at": now})
     if not force and previous.get("last_attempt_at") and now < next_due:
         result = dict(previous)
         result.update({"status": "not_due", "message": "Das konfigurierte Update-Intervall ist noch nicht erreicht", "next_update_at": next_due})
         return result
 
-    ipv4 = None
-    ipv6 = None
+    ipv4 = ipv6 = None
+    ipv4_meta: dict[str, Any] = {}
+    ipv6_meta: dict[str, Any] = {}
     errors: list[str] = []
     if config.get("ipv4_enabled", True):
         try:
-            ipv4 = address or public_ip(config)
-        except (OSError, ValueError, urllib.error.URLError) as exc:
+            ipv4_meta = {"address": address, "service": "vorgegeben", "interface": interface} if address else detect_public_address(config, socket.AF_INET, interface)
+            ipv4 = str(ipv4_meta["address"])
+        except OSError as exc:
             errors.append(f"IPv4: {exc}")
     if config.get("ipv6_enabled"):
         try:
-            ipv6 = public_ipv6(config)
-        except (OSError, ValueError, urllib.error.URLError) as exc:
+            ipv6_meta = detect_public_address(config, socket.AF_INET6, interface)
+            ipv6 = str(ipv6_meta["address"])
+        except OSError as exc:
             errors.append(f"IPv6: {exc}")
     if errors:
-        return _finish({"ok": False, "status": "public_ip_error", "message": "; ".join(errors), "last_attempt_at": now, "next_update_at": now + interval_seconds})
+        return _finish({"ok": False, "status": "public_ip_error", "message": "; ".join(errors), "interface": interface or "Standardroute", "last_attempt_at": now, "next_update_at": now + interval_seconds})
 
     old4 = str(previous.get("public_ipv4") or previous.get("public_ip") or "")
     old6 = str(previous.get("public_ipv6") or "")
@@ -246,21 +354,12 @@ def update(config: dict[str, Any] | None = None, address: str | None = None, for
     unchanged = (not ipv4 or old4 == ipv4) and (not ipv6 or old6 == ipv6)
     if not force and unchanged and previous.get("ok"):
         result = dict(previous)
-        result.update({"ok": True, "status": "unchanged", "message": "Öffentliche IP-Adressen sind unverändert", "public_ipv4": ipv4, "public_ipv6": ipv6, "ipv4_changed": False, "ipv6_changed": False, "last_attempt_at": now, "next_update_at": now + interval_seconds})
+        result.update({"ok": True, "status": "unchanged", "message": "Öffentliche IP-Adressen sind unverändert", "interface": interface or "Standardroute", "public_ipv4": ipv4, "public_ipv6": ipv6, "ipv4_changed": False, "ipv6_changed": False, "last_attempt_at": now, "next_update_at": now + interval_seconds})
         return _finish(result)
 
-    addresses = [value for value in (ipv4, ipv6) if value]
-    query = urllib.parse.urlencode({"hostname": config["hostname"], "myip": ",".join(addresses)})
-    token = base64.b64encode(f"{config['username']}:{config['password']}".encode()).decode()
-    request = urllib.request.Request(f"{config['update_url']}?{query}", headers={"Authorization": f"Basic {token}", "User-Agent": "PowerGateway DDNS/Linux-0.9 maintainer@localhost"})
-    try:
-        with urllib.request.urlopen(request, timeout=15) as response:
-            body = response.read(512).decode("utf-8", errors="replace").strip()
-    except urllib.error.HTTPError as exc:
-        body = exc.read(512).decode("utf-8", errors="replace").strip()
-        return _finish({"ok": False, "status": "http_error", "message": body or str(exc), "public_ipv4": ipv4, "public_ipv6": ipv6, "last_attempt_at": now, "next_update_at": now + interval_seconds})
-    except urllib.error.URLError as exc:
-        return _finish({"ok": False, "status": "network_error", "message": str(exc), "public_ipv4": ipv4, "public_ipv6": ipv6, "last_attempt_at": now, "next_update_at": now + interval_seconds})
+    returncode, body = _noip_request(config, [value for value in (ipv4, ipv6) if value], interface)
+    if returncode != 0:
+        return _finish({"ok": False, "status": "network_error", "message": body or f"curl Fehler {returncode}", "interface": interface or "Standardroute", "public_ipv4": ipv4, "public_ipv6": ipv6, "last_attempt_at": now, "next_update_at": now + interval_seconds})
 
     code = body.split()[0].lower() if body else "empty"
     ok = code in {"good", "nochg"}
@@ -277,10 +376,15 @@ def update(config: dict[str, Any] | None = None, address: str | None = None, for
         "status": code,
         "message": messages.get(code, body or "Unbekannte No-IP-Antwort"),
         "response": body,
+        "interface": interface or "Standardroute",
         "public_ipv4": ipv4,
         "previous_public_ipv4": old4,
+        "ipv4_service": ipv4_meta.get("service"),
+        "ipv4_latency_ms": ipv4_meta.get("latency_ms"),
         "public_ipv6": ipv6,
         "previous_public_ipv6": old6,
+        "ipv6_service": ipv6_meta.get("service"),
+        "ipv6_latency_ms": ipv6_meta.get("latency_ms"),
         "ipv4_changed": changed4,
         "ipv6_changed": changed6,
         "hostname": config["hostname"],
