@@ -21,6 +21,7 @@ Priority: optional
 Architecture: ${ARCH}
 Maintainer: PowerGateway Project
 Depends: python3, python3-venv, python3-pip, network-manager, modemmanager, wireguard-tools, qrencode, sqlite3, openssh-client, sudo, speedtest-cli, rfkill, iw, dnsmasq-base
+Conflicts: dnsmasq
 Description: Modulares Stromzaehler-Gateway fuer Raspberry Pi und Debian
  Liest USB-SML- und MQTT-Stromzaehler und uebertraegt Messwerte per MQTT
  inklusive Home-Assistant-Discovery.
@@ -50,11 +51,17 @@ systemctl disable --now powergateway-reverse-ssh.service >/dev/null 2>&1 || true
 rm -f /etc/systemd/system/powergateway-reverse-ssh.service
 rm -f /var/lib/powergateway/reverse_ssh.json /var/lib/powergateway/reverse_ssh_status.json
 rm -f /var/lib/powergateway/.ssh/reverse_ssh_ed25519 /var/lib/powergateway/.ssh/reverse_ssh_ed25519.pub
+# NetworkManager startet fuer ipv4.method=shared eine eigene, auf wlan0
+# begrenzte dnsmasq-Instanz. Ein systemweiter dnsmasq blockiert Port 53 und
+# verhindert dadurch die Hotspot-Aktivierung.
+systemctl disable --now dnsmasq.service >/dev/null 2>&1 || true
+pkill -x dnsmasq >/dev/null 2>&1 || true
 rfkill unblock wifi >/dev/null 2>&1 || true
 nmcli radio wifi on >/dev/null 2>&1 || true
 systemctl daemon-reload
 systemctl enable powergateway-wifi-prepare.service powergateway-network.service powergateway.service powergateway-web.service powergateway-config-reload.path powergateway-wireguard-apply.path powergateway-wireguard-status.timer powergateway-noip.timer
 systemctl restart powergateway-wifi-prepare.service || true
+systemctl restart NetworkManager.service || true
 systemctl restart powergateway-network.service || true
 systemctl restart powergateway.service powergateway-web.service || true
 systemctl restart powergateway-config-reload.path powergateway-wireguard-apply.path powergateway-wireguard-status.timer powergateway-noip.timer || true
