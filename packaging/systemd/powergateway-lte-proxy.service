@@ -1,8 +1,8 @@
 [Unit]
 Description=PowerGateway LTE-Modem Reverse Proxy
-After=network-online.target powergateway-network.service
+After=network-online.target powergateway-network.service powergateway-lte-proxy-address.service
 Wants=network-online.target
-Requires=powergateway-network.service
+Requires=powergateway-network.service powergateway-lte-proxy-address.service
 
 [Service]
 Type=simple

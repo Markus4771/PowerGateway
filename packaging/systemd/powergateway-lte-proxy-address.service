@@ -1,0 +1,17 @@
+[Unit]
+Description=PowerGateway LTE-Proxy-Adresse am Hotspot
+After=network-online.target powergateway-network.service
+Wants=network-online.target
+Requires=powergateway-network.service
+Before=powergateway-lte-proxy.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/bin/sh -c 'for i in $(seq 1 30); do if /usr/sbin/ip link show wlan0 >/dev/null 2>&1 && /usr/sbin/ip link show wlan0 | grep -q "state UP"; then exec /usr/sbin/ip address replace 192.168.50.254/24 dev wlan0; fi; sleep 1; done; echo "wlan0 ist nicht bereit" >&2; exit 1'
+ExecStop=-/usr/sbin/ip address del 192.168.50.254/24 dev wlan0
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
