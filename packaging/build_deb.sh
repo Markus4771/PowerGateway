@@ -20,7 +20,7 @@ Section: net
 Priority: optional
 Architecture: ${ARCH}
 Maintainer: PowerGateway Project
-Depends: python3, python3-venv, python3-pip, network-manager, modemmanager, wireguard-tools, qrencode, sqlite3, openssh-client, sudo, speedtest-cli
+Depends: python3, python3-venv, python3-pip, network-manager, modemmanager, wireguard-tools, qrencode, sqlite3, openssh-client, sudo, speedtest-cli, rfkill, iw, dnsmasq-base
 Description: Modulares Stromzaehler-Gateway fuer Raspberry Pi und Debian
  Liest USB-SML- und MQTT-Stromzaehler und uebertraegt Messwerte per MQTT
  inklusive Home-Assistant-Discovery.
@@ -50,8 +50,11 @@ systemctl disable --now powergateway-reverse-ssh.service >/dev/null 2>&1 || true
 rm -f /etc/systemd/system/powergateway-reverse-ssh.service
 rm -f /var/lib/powergateway/reverse_ssh.json /var/lib/powergateway/reverse_ssh_status.json
 rm -f /var/lib/powergateway/.ssh/reverse_ssh_ed25519 /var/lib/powergateway/.ssh/reverse_ssh_ed25519.pub
+rfkill unblock wifi >/dev/null 2>&1 || true
+nmcli radio wifi on >/dev/null 2>&1 || true
 systemctl daemon-reload
-systemctl enable powergateway-network.service powergateway.service powergateway-web.service powergateway-config-reload.path powergateway-wireguard-apply.path powergateway-wireguard-status.timer powergateway-noip.timer
+systemctl enable powergateway-wifi-prepare.service powergateway-network.service powergateway.service powergateway-web.service powergateway-config-reload.path powergateway-wireguard-apply.path powergateway-wireguard-status.timer powergateway-noip.timer
+systemctl restart powergateway-wifi-prepare.service || true
 systemctl restart powergateway-network.service || true
 systemctl restart powergateway.service powergateway-web.service || true
 systemctl restart powergateway-config-reload.path powergateway-wireguard-apply.path powergateway-wireguard-status.timer powergateway-noip.timer || true
@@ -65,7 +68,7 @@ chmod 0755 "${BUILD_ROOT}/DEBIAN/postinst"
 cat > "${BUILD_ROOT}/DEBIAN/prerm" <<'EOF'
 #!/usr/bin/env bash
 set -e
-for unit in powergateway.service powergateway-web.service powergateway-network.service powergateway-config-reload.path powergateway-wireguard-apply.path powergateway-wireguard-status.timer powergateway-noip.timer powergateway-noip.service powergateway-ha-tunnel.service; do systemctl disable --now "$unit" >/dev/null 2>&1 || true; done
+for unit in powergateway.service powergateway-web.service powergateway-network.service powergateway-wifi-prepare.service powergateway-config-reload.path powergateway-wireguard-apply.path powergateway-wireguard-status.timer powergateway-noip.timer powergateway-noip.service powergateway-ha-tunnel.service; do systemctl disable --now "$unit" >/dev/null 2>&1 || true; done
 EOF
 chmod 0755 "${BUILD_ROOT}/DEBIAN/prerm"
 cat > "${BUILD_ROOT}/DEBIAN/postrm" <<'EOF'
