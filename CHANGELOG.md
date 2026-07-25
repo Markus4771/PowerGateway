@@ -1,5 +1,15 @@
 # Änderungsprotokoll
 
+## 0.9.29-dev – 2026-07-25
+
+- Setup-Hotspot standardmäßig als dauerhaftes lokales Administrationsnetz konfiguriert
+- Konflikt mit einem systemweit laufenden `dnsmasq.service` behoben
+- Debian-Paket verwendet ausschließlich `dnsmasq-base`; NetworkManager startet die Hotspot-Instanz selbst
+- Paketinstallation stoppt und deaktiviert einen alten systemweiten dnsmasq vor dem Hotspot-Start
+- WLAN wird vor dem Netzwerkcontroller per `rfkill` und NetworkManager aktiviert
+- Hotspot-Adresse `192.168.50.1/24`, DHCP durch NetworkManager und SSID `PowerGateway-Setup` dokumentiert
+- LAN, LTE, MQTT, WireGuard und DynDNS bleiben vom lokalen Hotspot-Routing getrennt
+
 ## 0.9.19-dev – 2026-07-24
 
 - No-IP um getrennt aktivierbare IPv4- und IPv6-Aktualisierung erweitert
