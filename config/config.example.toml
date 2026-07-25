@@ -97,7 +97,7 @@ interface = "wg0"
 enabled = true
 path = "/var/lib/powergateway/buffer.db"
 max_messages = 10000
-flush_batch_size = 500
+flush_batch_size = 100
 
 [web]
 enabled = true
