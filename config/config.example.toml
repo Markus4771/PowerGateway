@@ -36,7 +36,8 @@ homeassistant_discovery = true
 discovery_prefix = "homeassistant"
 
 [network]
-# Reihenfolge für automatisches Fallback. Der erste verfügbare Zugang gewinnt.
+# Reihenfolge fuer den Internetzugang. Der Hotspot ist nur das lokale
+# Administrationsnetz und wird nicht als Uplink verwendet.
 priority = ["lan", "wifi", "lte"]
 apply_priorities_on_start = true
 connection_check_host = "1.1.1.1"
@@ -54,7 +55,7 @@ dns = []
 [network.wifi]
 enabled = true
 interface = "auto"
-# Bereits vorhandenes NetworkManager-Profil. SSID/Passwort werden später über die WebGUI gesetzt.
+# Bereits vorhandenes NetworkManager-Profil. SSID/Passwort werden spaeter ueber die WebGUI gesetzt.
 connection = "PowerGateway-WLAN"
 ssid = ""
 password = ""
@@ -72,6 +73,19 @@ username = ""
 password = ""
 pin = ""
 roaming = false
+
+[network.hotspot]
+# always: lokaler Administrations-Hotspot bleibt aktiv, sofern wlan0 nicht
+# gleichzeitig als WLAN-Client benoetigt wird. Fuer parallelen WLAN-Client- und
+# Hotspot-Betrieb ist ein zweiter WLAN-Adapter erforderlich.
+mode = "always"
+connection = "PowerGateway-Setup"
+interface = "wlan0"
+ssid = "PowerGateway-Setup"
+password = "powergateway"
+address = "192.168.50.1/24"
+band = "bg"
+offline_fallback = true
 
 [wireguard]
 enabled = false
