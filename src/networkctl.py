@@ -15,14 +15,13 @@ import time
 from pathlib import Path
 from typing import Any
 
+from hotspot_manager import configure_hotspot, stop_hotspot
 from network_manager import (
     apply_priorities,
-    configure_hotspot,
     configure_lan,
     configure_lte,
     configure_wifi,
     snapshot,
-    stop_hotspot,
 )
 
 try:
