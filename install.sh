@@ -19,7 +19,7 @@ python3 -m venv "${INSTALL_DIR}/venv"
 "${INSTALL_DIR}/venv/bin/pip" install --upgrade pip wheel
 "${INSTALL_DIR}/venv/bin/pip" install -r "${PROJECT_DIR}/requirements.txt"
 if [[ ! -f "${CONFIG_DIR}/config.toml" ]]; then install -m 0640 -o root -g powergateway "${PROJECT_DIR}/config/config.example.toml" "${CONFIG_DIR}/config.toml"; else echo "Vorhandene Konfiguration bleibt erhalten."; install -m 0640 -o root -g powergateway "${PROJECT_DIR}/config/config.example.toml" "${CONFIG_DIR}/config.example.toml"; fi
-for unit in powergateway.service powergateway-web.service powergateway-network.service powergateway-lte-proxy.service powergateway-config-reload.service powergateway-config-reload.path powergateway-wireguard-apply.service powergateway-wireguard-apply.path powergateway-wireguard-status.service powergateway-wireguard-status.timer powergateway-ha-tunnel.service powergateway-noip.service powergateway-noip.timer; do install -m 0644 "${PROJECT_DIR}/packaging/systemd/${unit}" "${SYSTEMD_DIR}/${unit}"; done
+for unit in powergateway.service powergateway-web.service powergateway-network.service powergateway-lte-proxy-address.service powergateway-lte-proxy.service powergateway-config-reload.service powergateway-config-reload.path powergateway-wireguard-apply.service powergateway-wireguard-apply.path powergateway-wireguard-status.service powergateway-wireguard-status.timer powergateway-ha-tunnel.service powergateway-noip.service powergateway-noip.timer; do install -m 0644 "${PROJECT_DIR}/packaging/systemd/${unit}" "${SYSTEMD_DIR}/${unit}"; done
 install -d -m 0750 /etc/sudoers.d
 install -m 0440 "${PROJECT_DIR}/packaging/sudoers/powergateway-ha-tunnel" /etc/sudoers.d/powergateway-ha-tunnel
 visudo -cf /etc/sudoers.d/powergateway-ha-tunnel
@@ -27,8 +27,9 @@ chown -R root:root "${INSTALL_DIR}"
 chmod 0755 "${INSTALL_DIR}"/src/*.py
 chown -R powergateway:powergateway "${DATA_DIR}"
 systemctl daemon-reload
-systemctl enable powergateway-network.service powergateway.service powergateway-web.service powergateway-lte-proxy.service powergateway-config-reload.path powergateway-wireguard-apply.path powergateway-wireguard-status.timer powergateway-noip.timer
+systemctl enable powergateway-network.service powergateway.service powergateway-web.service powergateway-lte-proxy-address.service powergateway-lte-proxy.service powergateway-config-reload.path powergateway-wireguard-apply.path powergateway-wireguard-status.timer powergateway-noip.timer
 systemctl restart powergateway-network.service || true
+systemctl restart powergateway-lte-proxy-address.service || true
 systemctl restart powergateway.service powergateway-web.service powergateway-lte-proxy.service || true
 systemctl restart powergateway-config-reload.path powergateway-wireguard-apply.path powergateway-wireguard-status.timer powergateway-noip.timer || true
 if [[ -f "${DATA_DIR}/homeassistant_connector.json" ]] && grep -Eq '"mode"[[:space:]]*:[[:space:]]*"(ssh_mqtt|reverse_ssh_mqtt)"' "${DATA_DIR}/homeassistant_connector.json" && grep -Eq '"enabled"[[:space:]]*:[[:space:]]*true' "${DATA_DIR}/homeassistant_connector.json"; then
