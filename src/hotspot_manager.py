@@ -21,6 +21,20 @@ def _channel(section: dict[str, object]) -> str:
     return str(channel if 1 <= channel <= 13 else 6)
 
 
+def _addresses(section: dict[str, object], primary: str) -> str:
+    """Erzeugt die NetworkManager-Adressliste inklusive LTE-Proxy-IP."""
+    primary_interface = ipaddress.ip_interface(primary)
+    proxy = str(section.get("proxy_address", "192.168.50.254/24")).strip()
+    if not proxy:
+        return primary
+    proxy_interface = ipaddress.ip_interface(proxy)
+    if proxy_interface.network != primary_interface.network:
+        raise ValueError("Hotspot- und Proxy-Adresse müssen im selben Netz liegen")
+    if proxy_interface.ip == primary_interface.ip:
+        raise ValueError("Hotspot- und Proxy-Adresse müssen verschieden sein")
+    return f"{primary},{proxy}"
+
+
 def configure_hotspot(section: dict[str, object]) -> CommandResult:
     connection = str(section.get("connection", "PowerGateway-Setup"))
     interface = str(section.get("interface", "wlan0"))
@@ -30,7 +44,7 @@ def configure_hotspot(section: dict[str, object]) -> CommandResult:
     band = str(section.get("band", "bg"))
 
     try:
-        ipaddress.ip_interface(address)
+        addresses = _addresses(section, address)
     except ValueError as exc:
         return CommandResult(False, error=f"Ungültige Hotspot-Adresse: {exc}")
     if not 8 <= len(password) <= 63:
@@ -80,7 +94,7 @@ def configure_hotspot(section: dict[str, object]) -> CommandResult:
         "802-11-wireless-security.pmf", "2",
         "802-11-wireless-security.psk", password,
         "ipv4.method", "shared",
-        "ipv4.addresses", address,
+        "ipv4.addresses", addresses,
         "ipv6.method", "disabled",
     ]
     result = run(command)
