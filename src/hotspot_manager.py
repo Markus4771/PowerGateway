@@ -77,7 +77,7 @@ def configure_hotspot(section: dict[str, object]) -> CommandResult:
         "802-11-wireless-security.proto", "rsn",
         "802-11-wireless-security.pairwise", "ccmp",
         "802-11-wireless-security.group", "ccmp",
-        "802-11-wireless-security.pmf", "1",
+        "802-11-wireless-security.pmf", "2",
         "802-11-wireless-security.psk", password,
         "ipv4.method", "shared",
         "ipv4.addresses", address,
