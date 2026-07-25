@@ -85,6 +85,8 @@ ssid = "PowerGateway-Setup"
 password = "powergateway"
 address = "192.168.50.1/24"
 band = "bg"
+# Fester 2,4-GHz-Kanal für hohe Kompatibilität mit Raspberry Pi und Windows.
+channel = 6
 offline_fallback = true
 
 [wireguard]
@@ -95,7 +97,7 @@ interface = "wg0"
 enabled = true
 path = "/var/lib/powergateway/buffer.db"
 max_messages = 10000
-flush_batch_size = 100
+flush_batch_size = 500
 
 [web]
 enabled = true
