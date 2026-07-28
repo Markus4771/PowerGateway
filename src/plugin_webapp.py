@@ -6,6 +6,7 @@ import webapp_features as features
 import wireguard_advanced
 import homeassistant_runtime
 import ssh_tunnel_web
+import letsencrypt_web
 import dashboard_runtime
 import network_diagnostics_runtime
 import gateway_selector
