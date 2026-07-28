@@ -105,7 +105,19 @@ def ssh_tunnel_logs() -> Response:
 page = runtime.PAGE
 page = page.replace(
     '<pre id="hacResult">Noch nicht geprüft.</pre></div>',
-    '<pre id="hacResult">Noch nicht geprüft.</pre><div class="section"><h3>SSH-Tunneldienst</h3><div id="sshTunnelState" class="muted">Noch nicht geprüft.</div><div class="toolbar"><button class="secondary" onclick="sshTunnelAction(\'start\')">Starten</button><button class="secondary" onclick="sshTunnelAction(\'restart\')">Neu starten</button><button class="secondary" onclick="sshTunnelAction(\'stop\')">Stoppen</button><button class="secondary" onclick="loadSshTunnelLogs()">Logs</button></div><pre id="sshTunnelLogs" style="max-height:260px;overflow:auto">Noch nicht geladen.</pre></div></div>',
+    '''<pre id="hacResult">Noch nicht geprüft.</pre>
+<div class="section"><h3>SSH-Tunneldienst</h3><div id="sshTunnelState" class="muted">Noch nicht geprüft.</div><div class="toolbar"><button class="secondary" onclick="sshTunnelAction('start')">Starten</button><button class="secondary" onclick="sshTunnelAction('restart')">Neu starten</button><button class="secondary" onclick="sshTunnelAction('stop')">Stoppen</button><button class="secondary" onclick="loadSshTunnelLogs()">Logs</button></div><pre id="sshTunnelLogs" style="max-height:260px;overflow:auto">Noch nicht geladen.</pre></div>
+<div class="section"><h3>Anleitung: MQTT über SSH-Tunnel</h3>
+<div class="card"><h4>1. Voraussetzungen</h4><p>Auf dem Zielsystem muss ein SSH-Server erreichbar sein. Der MQTT-Broker muss dort auf Port 1883 laufen. Von außen muss nur der SSH-Port erreichbar sein; MQTT-Port 1883 bleibt geschlossen.</p></div>
+<div class="card"><h4>2. Einstellungen im PowerGateway</h4><ol><li><b>Verbindung aktivieren</b> einschalten.</li><li>Als Verbindungsart <b>SSH-Tunnel + MQTT</b> wählen.</li><li>SSH-Host, SSH-Port und SSH-Benutzer eintragen.</li><li>Lokalen MQTT-Tunnelport auf <code>18830</code> lassen.</li><li>Entfernten MQTT-Port auf <code>1883</code> setzen.</li></ol></div>
+<div class="card"><h4>3. SSH-Schlüssel einrichten</h4><p>Auf <b>SSH-Schlüssel erzeugen</b> klicken. Den angezeigten öffentlichen Schlüssel vollständig kopieren und auf dem SSH-Server in <code>~/.ssh/authorized_keys</code> eintragen.</p><pre>mkdir -p ~/.ssh
+chmod 700 ~/.ssh
+nano ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys</pre></div>
+<div class="card"><h4>4. Speichern und testen</h4><p>Die Verbindung speichern und danach <b>Verbindung testen</b> wählen. Anschließend den Tunneldienst starten. Bei erfolgreicher Einrichtung ist der Dienst aktiv und MQTT über <code>127.0.0.1:18830</code> erreichbar.</p></div>
+<div class="card"><h4>5. Automatischer Betrieb</h4><p>Der Tunnel wird beim Systemstart automatisch gestartet. Bei einem Verbindungsabbruch prüft SSH die Verbindung regelmäßig; systemd startet den Tunnel nach einem Fehler automatisch neu.</p></div>
+<div class="card"><h4>Fehlersuche</h4><p>Mit <b>Logs</b> werden die letzten Meldungen angezeigt. Häufige Ursachen sind ein fehlender öffentlicher Schlüssel, ein falscher SSH-Benutzer, ein geschlossener SSH-Port oder ein MQTT-Broker, der auf dem Zielsystem nicht auf Port 1883 lauscht.</p></div>
+</div></div>''',
 )
 page = page.replace(
     'async function loadHaConnector(){',
