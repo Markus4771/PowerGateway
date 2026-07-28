@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CONFIG_DIR=/etc/powergateway
+TLS_DIR=${CONFIG_DIR}/tls
+WEBROOT=/var/lib/powergateway/acme
+CONF=${CONFIG_DIR}/letsencrypt.conf
+
+valid_domain() {
+  [[ "$1" =~ ^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$ ]]
+}
+valid_email() {
+  [[ "$1" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]]
+}
+load_conf() {
+  DOMAIN=""; EMAIL=""
+  if [[ -f "$CONF" ]]; then
+    # shellcheck disable=SC1090
+    source "$CONF"
+  fi
+}
+deploy() {
+  load_conf
+  [[ -n "$DOMAIN" ]] || { echo "Keine Let's-Encrypt-Domain konfiguriert" >&2; exit 2; }
+  local live="/etc/letsencrypt/live/${DOMAIN}"
+  [[ -s "${live}/fullchain.pem" && -s "${live}/privkey.pem" ]] || { echo "Zertifikat für ${DOMAIN} fehlt" >&2; exit 3; }
+  install -d -m 0750 -o root -g powergateway "$TLS_DIR"
+  ln -sfn "${live}/fullchain.pem" "${TLS_DIR}/powergateway.crt"
+  ln -sfn "${live}/privkey.pem" "${TLS_DIR}/powergateway.key"
+  nginx -t
+  systemctl reload nginx
+}
+
+case "${1:-}" in
+  issue)
+    DOMAIN="${2:-}"; EMAIL="${3:-}"
+    valid_domain "$DOMAIN" || { echo "Ungültiger Domainname" >&2; exit 2; }
+    valid_email "$EMAIL" || { echo "Ungültige E-Mail-Adresse" >&2; exit 2; }
+    install -d -m 0755 "$WEBROOT/.well-known/acme-challenge"
+    printf 'DOMAIN=%q\nEMAIL=%q\n' "$DOMAIN" "$EMAIL" > "$CONF"
+    chmod 0640 "$CONF"; chown root:powergateway "$CONF"
+    certbot certonly --non-interactive --agree-tos --no-eff-email \
+      --email "$EMAIL" --webroot -w "$WEBROOT" -d "$DOMAIN"
+    deploy
+    systemctl enable --now certbot.timer >/dev/null 2>&1 || true
+    ;;
+  renew)
+    certbot renew --non-interactive --deploy-hook "/usr/local/sbin/powergateway-certbot deploy"
+    deploy
+    ;;
+  deploy)
+    deploy
+    ;;
+  *)
+    echo "Verwendung: $0 {issue DOMAIN EMAIL|renew|deploy}" >&2
+    exit 2
+    ;;
+esac
