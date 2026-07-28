@@ -2,7 +2,6 @@
 """WebGUI und API für Let's-Encrypt-Zertifikate."""
 from __future__ import annotations
 
-import json
 import re
 import subprocess
 from datetime import datetime, timezone
@@ -37,15 +36,20 @@ def _configured() -> dict[str, str]:
         for line in CONF.read_text(encoding='utf-8').splitlines():
             key, _, value = line.partition('=')
             value = value.strip().strip("'").strip('"')
-            if key == 'DOMAIN': result['domain'] = value
-            if key == 'EMAIL': result['email'] = value
+            if key == 'DOMAIN':
+                result['domain'] = value
+            if key == 'EMAIL':
+                result['email'] = value
     except OSError:
         pass
     return result
 
 
 def _certificate() -> dict:
-    result = {'present': CERT.exists(), 'issuer': '', 'subject': '', 'not_before': '', 'not_after': '', 'days_remaining': None}
+    result = {
+        'present': CERT.exists(), 'issuer': '', 'subject': '',
+        'not_before': '', 'not_after': '', 'days_remaining': None,
+    }
     if not CERT.exists():
         return result
     proc = _run(['/usr/bin/openssl', 'x509', '-in', str(CERT), '-noout', '-issuer', '-subject', '-startdate', '-enddate'], 10)
@@ -54,9 +58,12 @@ def _certificate() -> dict:
         return result
     for line in proc.stdout.splitlines():
         key, _, value = line.partition('=')
-        if key == 'issuer': result['issuer'] = value.strip()
-        elif key == 'subject': result['subject'] = value.strip()
-        elif key == 'notBefore': result['not_before'] = value.strip()
+        if key == 'issuer':
+            result['issuer'] = value.strip()
+        elif key == 'subject':
+            result['subject'] = value.strip()
+        elif key == 'notBefore':
+            result['not_before'] = value.strip()
         elif key == 'notAfter':
             result['not_after'] = value.strip()
             try:
@@ -68,12 +75,36 @@ def _certificate() -> dict:
     return result
 
 
+def _message(proc: subprocess.CompletedProcess[str], success: str) -> str:
+    output = '\n'.join(part.strip() for part in (proc.stdout, proc.stderr) if part and part.strip())
+    return output or success
+
+
+def _error_hint(message: str) -> str:
+    lower = message.lower()
+    if 'permission denied' in lower:
+        return 'Der Webserver hat keine Berechtigung auf den ACME-Ordner. Bitte die Installation erneut ausführen.'
+    if 'timeout during connect' in lower:
+        return 'Port 80 ist aus dem Internet nicht erreichbar. Bitte Router, Firewall oder DS-Lite prüfen.'
+    if 'invalid response' in lower or 'unauthorized' in lower or '404' in lower:
+        return 'Die ACME-Challenge wurde nicht ausgeliefert. DNS, Portweiterleitung und nginx-Webroot prüfen.'
+    if 'sudo' in lower and ('password' in lower or 'not allowed' in lower):
+        return 'Die sudo-Berechtigung für powergateway-certbot fehlt. Bitte die Installation erneut ausführen.'
+    return 'Die Zertifikatsanforderung ist fehlgeschlagen. Die technische Ausgabe steht unter Details.'
+
+
 @app.get('/_internal/letsencrypt')
 @legacy.login_required
 def letsencrypt_status() -> Response:
     timer = _run(['/usr/bin/systemctl', 'is-enabled', 'certbot.timer'], 5)
     active = _run(['/usr/bin/systemctl', 'is-active', 'certbot.timer'], 5)
-    return jsonify({'config': _configured(), 'certificate': _certificate(), 'timer_enabled': timer.stdout.strip() == 'enabled', 'timer_active': active.stdout.strip() == 'active'})
+    return jsonify({
+        'ok': True,
+        'config': _configured(),
+        'certificate': _certificate(),
+        'timer_enabled': timer.stdout.strip() == 'enabled',
+        'timer_active': active.stdout.strip() == 'active',
+    })
 
 
 @app.post('/_internal/letsencrypt/issue')
@@ -83,33 +114,39 @@ def letsencrypt_issue() -> Response:
     domain = str(data.get('domain', '')).strip().lower()
     email = str(data.get('email', '')).strip()
     if not DOMAIN_RE.fullmatch(domain):
-        return jsonify({'ok': False, 'message': 'Bitte einen gültigen vollständigen Domainnamen eingeben.'}), 400
+        return jsonify({'ok': False, 'error': 'Bitte einen gültigen vollständigen Domainnamen eingeben.', 'message': 'Bitte einen gültigen vollständigen Domainnamen eingeben.'}), 400
     if not EMAIL_RE.fullmatch(email):
-        return jsonify({'ok': False, 'message': 'Bitte eine gültige E-Mail-Adresse eingeben.'}), 400
+        return jsonify({'ok': False, 'error': 'Bitte eine gültige E-Mail-Adresse eingeben.', 'message': 'Bitte eine gültige E-Mail-Adresse eingeben.'}), 400
     proc = _run(['sudo', '-n', HELPER, 'issue', domain, email])
-    message = proc.stderr.strip() or proc.stdout.strip() or 'Zertifikat wurde angefordert.'
-    return jsonify({'ok': proc.returncode == 0, 'message': message, 'certificate': _certificate()}), 200 if proc.returncode == 0 else 500
+    details = _message(proc, 'Zertifikat wurde angefordert.')
+    if proc.returncode != 0:
+        hint = _error_hint(details)
+        return jsonify({'ok': False, 'error': hint, 'message': hint, 'details': details, 'exit_code': proc.returncode, 'certificate': _certificate()}), 500
+    return jsonify({'ok': True, 'message': 'Das Let’s-Encrypt-Zertifikat wurde erfolgreich eingerichtet.', 'details': details, 'certificate': _certificate()})
 
 
 @app.post('/_internal/letsencrypt/renew')
 @legacy.login_required
 def letsencrypt_renew() -> Response:
     proc = _run(['sudo', '-n', HELPER, 'renew'])
-    message = proc.stderr.strip() or proc.stdout.strip() or 'Zertifikatsverlängerung wurde geprüft.'
-    return jsonify({'ok': proc.returncode == 0, 'message': message, 'certificate': _certificate()}), 200 if proc.returncode == 0 else 500
+    details = _message(proc, 'Zertifikatsverlängerung wurde geprüft.')
+    if proc.returncode != 0:
+        return jsonify({'ok': False, 'error': 'Die Zertifikatsverlängerung ist fehlgeschlagen.', 'message': 'Die Zertifikatsverlängerung ist fehlgeschlagen.', 'details': details, 'exit_code': proc.returncode, 'certificate': _certificate()}), 500
+    return jsonify({'ok': True, 'message': 'Die Zertifikatsverlängerung wurde erfolgreich geprüft.', 'details': details, 'certificate': _certificate()})
 
 
 SECTION = r'''
 <section id="httpsSecurity" class="tab"><div class="toolbar"><div><h2>HTTPS & Let's Encrypt</h2><div class="muted">Öffentlich vertrauenswürdiges Zertifikat automatisch ausstellen und verlängern.</div></div><button onclick="loadLetsEncrypt()">Neu laden</button></div>
 <div class="section two"><div class="card"><h2>Let's Encrypt einrichten</h2><div class="form-grid"><div class="field full"><label>Vollständiger Domainname</label><input id="leDomain" placeholder="powergateway.example.de"></div><div class="field full"><label>E-Mail-Adresse</label><input id="leEmail" type="email" placeholder="admin@example.de"></div><div class="field full"><button onclick="issueLetsEncrypt()">Zertifikat anfordern</button> <button class="secondary" onclick="renewLetsEncrypt()">Verlängerung jetzt prüfen</button></div></div><pre id="leResult">Noch nicht geprüft.</pre></div>
-<div class="card"><h2>Voraussetzungen</h2><div class="status-row"><span>DNS</span><strong>Domain zeigt auf den Internetanschluss</strong></div><div class="status-row"><span>Port 80/TCP</span><strong>Von außen zum PowerGateway weiterleiten</strong></div><div class="status-row"><span>Port 443/TCP</span><strong>Für die HTTPS-Weboberfläche</strong></div><p class="muted">Die HTTP-01-Prüfung verwendet ausschließlich <code>/.well-known/acme-challenge/</code>. Nach erfolgreicher Ausstellung wird nginx automatisch neu geladen.</p><p class="muted">Bei DS-Lite oder ohne eingehende Erreichbarkeit ist später eine DNS-01-Erweiterung erforderlich.</p></div></div>
+<div class="card"><h2>Voraussetzungen</h2><div class="status-row"><span>DNS</span><strong>Domain zeigt auf den Internetanschluss</strong></div><div class="status-row"><span>Port 80/TCP</span><strong>Von außen zum PowerGateway weiterleiten</strong></div><div class="status-row"><span>Port 443/TCP</span><strong>Für die HTTPS-Weboberfläche</strong></div><p class="muted">Die HTTP-01-Prüfung verwendet ausschließlich <code>/.well-known/acme-challenge/</code>. Nach erfolgreicher Ausstellung wird nginx automatisch neu geladen.</p><p class="muted">Bei DS-Lite oder ohne eingehende Erreichbarkeit ist eine DNS-01-Erweiterung erforderlich.</p></div></div>
 <div class="section"><div class="card"><h2>Zertifikatsstatus</h2><div id="leStatus" class="muted">Noch nicht geladen.</div></div></div></section>
 '''
 JS = r'''
+async function leApi(url,opt={}){const r=await fetch(url,{cache:'no-store',credentials:'same-origin',...opt});const type=(r.headers.get('content-type')||'').toLowerCase();const text=await r.text();let d={};if(text){if(type.includes('application/json')){try{d=JSON.parse(text)}catch(e){throw new Error('Die Serverantwort enthält ungültiges JSON.')} }else{throw new Error(`Unerwartete Serverantwort (HTTP ${r.status}): ${text.slice(0,180)}`)}}if(r.status===401){location='/login';throw new Error('Sitzung abgelaufen. Bitte erneut anmelden.')}if(!r.ok)throw new Error(d.error||d.message||`HTTP ${r.status}`);return d}
 function showLeStatus(d){const c=d.certificate||{},cfg=d.config||{};$('leStatus').innerHTML=`<div class="status-row"><span>Typ</span><strong>${c.letsencrypt?'Let\'s Encrypt':(c.present?'Lokales/eigenes Zertifikat':'Kein Zertifikat')}</strong></div><div class="status-row"><span>Domain</span><strong>${esc(cfg.domain||'—')}</strong></div><div class="status-row"><span>Aussteller</span><strong>${esc(c.issuer||'—')}</strong></div><div class="status-row"><span>Gültig bis</span><strong>${esc(c.not_after||'—')}</strong></div><div class="status-row"><span>Restlaufzeit</span><strong>${c.days_remaining===null?'—':esc(c.days_remaining+' Tage')}</strong></div><div class="status-row"><span>Automatische Verlängerung</span><strong>${d.timer_enabled&&d.timer_active?'Aktiv':'Nicht aktiv'}</strong></div>`}
-async function loadLetsEncrypt(){try{const d=await api('/_internal/letsencrypt');val('leDomain',(d.config||{}).domain||'');val('leEmail',(d.config||{}).email||'');showLeStatus(d)}catch(e){notice(e.message,false)}}
-async function issueLetsEncrypt(){try{const d=await api('/_internal/letsencrypt/issue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({domain:$('leDomain').value.trim(),email:$('leEmail').value.trim()})});$('leResult').textContent=d.message;notice(d.message,d.ok!==false);await loadLetsEncrypt()}catch(e){$('leResult').textContent=e.message;notice(e.message,false)}}
-async function renewLetsEncrypt(){try{const d=await api('/_internal/letsencrypt/renew',{method:'POST'});$('leResult').textContent=d.message;notice(d.message,d.ok!==false);await loadLetsEncrypt()}catch(e){$('leResult').textContent=e.message;notice(e.message,false)}}
+async function loadLetsEncrypt(){try{const d=await leApi('/_internal/letsencrypt');val('leDomain',(d.config||{}).domain||'');val('leEmail',(d.config||{}).email||'');showLeStatus(d)}catch(e){notice(e.message,false)}}
+async function issueLetsEncrypt(){try{$('leResult').textContent='Zertifikat wird angefordert …';const d=await leApi('/_internal/letsencrypt/issue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({domain:$('leDomain').value.trim(),email:$('leEmail').value.trim()})});$('leResult').textContent=[d.message,d.details].filter(Boolean).join('\n\n');notice(d.message,true);await loadLetsEncrypt()}catch(e){$('leResult').textContent=e.message;notice(e.message,false)}}
+async function renewLetsEncrypt(){try{$('leResult').textContent='Verlängerung wird geprüft …';const d=await leApi('/_internal/letsencrypt/renew',{method:'POST'});$('leResult').textContent=[d.message,d.details].filter(Boolean).join('\n\n');notice(d.message,true);await loadLetsEncrypt()}catch(e){$('leResult').textContent=e.message;notice(e.message,false)}}
 '''
 
 page = runtime.PAGE
