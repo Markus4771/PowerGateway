@@ -1,0 +1,1 @@
+powergateway ALL=(root) NOPASSWD: /usr/local/sbin/powergateway-certbot issue *, /usr/local/sbin/powergateway-certbot renew, /usr/local/sbin/powergateway-certbot deploy
