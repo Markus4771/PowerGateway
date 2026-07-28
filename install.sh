@@ -10,10 +10,14 @@ apt-get install -y python3 python3-venv python3-pip usb-modeswitch modemmanager 
 if ! id powergateway >/dev/null 2>&1; then useradd --system --home "${DATA_DIR}" --shell /usr/sbin/nologin powergateway; fi
 usermod -a -G dialout,plugdev powergateway
 if getent group systemd-journal >/dev/null 2>&1; then usermod -a -G systemd-journal powergateway; fi
+# nginx muss den geschützten PowerGateway-Datenordner für HTTP-01 betreten können.
+if id www-data >/dev/null 2>&1; then usermod -a -G powergateway www-data; fi
 install -d -m 0755 "${INSTALL_DIR}" "${CONFIG_DIR}" /etc/wireguard
 install -d -o powergateway -g powergateway -m 0750 "${DATA_DIR}"
 install -d -o powergateway -g powergateway -m 0700 "${DATA_DIR}/.ssh"
-install -d -o powergateway -g powergateway -m 0755 "${ACME_DIR}/.well-known/acme-challenge"
+install -d -o root -g powergateway -m 0755 "${ACME_DIR}"
+install -d -o root -g powergateway -m 0755 "${ACME_DIR}/.well-known"
+install -d -o root -g powergateway -m 0755 "${ACME_DIR}/.well-known/acme-challenge"
 install -d -o root -g powergateway -m 0750 "${TLS_DIR}"
 rm -rf "${INSTALL_DIR}/src" "${INSTALL_DIR}/venv"
 cp -a "${PROJECT_DIR}/src" "${INSTALL_DIR}/src"
@@ -55,12 +59,16 @@ nginx -t
 
 chown -R root:root "${INSTALL_DIR}"
 chmod 0755 "${INSTALL_DIR}"/src/*.py
+# Daten bleiben Eigentum des Dienstkontos; ACME benötigt bewusst andere Rechte.
 chown -R powergateway:powergateway "${DATA_DIR}"
+chown root:powergateway "${ACME_DIR}" "${ACME_DIR}/.well-known" "${ACME_DIR}/.well-known/acme-challenge"
+chmod 0750 "${DATA_DIR}"
 chmod 0755 "${ACME_DIR}" "${ACME_DIR}/.well-known" "${ACME_DIR}/.well-known/acme-challenge"
 systemctl daemon-reload
 systemctl enable powergateway-network.service powergateway.service powergateway-web.service powergateway-lte-proxy-address.service powergateway-lte-proxy.service powergateway-config-reload.path powergateway-wireguard-apply.path powergateway-wireguard-status.timer powergateway-noip.timer nginx certbot.timer
 systemctl restart powergateway-network.service || true
 systemctl restart powergateway-lte-proxy-address.service || true
+# Zuerst LTE-Proxy auf internem Port starten, danach nginx als alleinigen Port-80-Dienst.
 systemctl restart powergateway.service powergateway-web.service powergateway-lte-proxy.service || true
 systemctl restart powergateway-config-reload.path powergateway-wireguard-apply.path powergateway-wireguard-status.timer powergateway-noip.timer || true
 systemctl restart nginx
