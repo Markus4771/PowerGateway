@@ -12,6 +12,12 @@ valid_domain() {
 valid_email() {
   [[ "$1" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]]
 }
+prepare_webroot() {
+  install -d -o powergateway -g powergateway -m 0750 /var/lib/powergateway
+  install -d -o root -g powergateway -m 0755 "$WEBROOT"
+  install -d -o root -g powergateway -m 0755 "$WEBROOT/.well-known"
+  install -d -o root -g powergateway -m 0755 "$WEBROOT/.well-known/acme-challenge"
+}
 load_conf() {
   DOMAIN=""; EMAIL=""
   if [[ -f "$CONF" ]]; then
@@ -29,6 +35,7 @@ deploy() {
   ln -sfn "${live}/privkey.pem" "${TLS_DIR}/powergateway.key"
   nginx -t
   systemctl reload nginx
+  echo "Zertifikat für ${DOMAIN} wurde aktiviert und nginx neu geladen."
 }
 
 case "${1:-}" in
@@ -36,7 +43,7 @@ case "${1:-}" in
     DOMAIN="${2:-}"; EMAIL="${3:-}"
     valid_domain "$DOMAIN" || { echo "Ungültiger Domainname" >&2; exit 2; }
     valid_email "$EMAIL" || { echo "Ungültige E-Mail-Adresse" >&2; exit 2; }
-    install -d -m 0755 "$WEBROOT/.well-known/acme-challenge"
+    prepare_webroot
     printf 'DOMAIN=%q\nEMAIL=%q\n' "$DOMAIN" "$EMAIL" > "$CONF"
     chmod 0640 "$CONF"; chown root:powergateway "$CONF"
     certbot certonly --non-interactive --agree-tos --no-eff-email \
@@ -45,8 +52,12 @@ case "${1:-}" in
     systemctl enable --now certbot.timer >/dev/null 2>&1 || true
     ;;
   renew)
+    prepare_webroot
     certbot renew --non-interactive --deploy-hook "/usr/local/sbin/powergateway-certbot deploy"
-    deploy
+    load_conf
+    if [[ -n "$DOMAIN" && -s "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" ]]; then
+      deploy
+    fi
     ;;
   deploy)
     deploy
