@@ -25,7 +25,7 @@ python3 -m venv "${INSTALL_DIR}/venv"
 "${INSTALL_DIR}/venv/bin/pip" install --upgrade pip wheel
 "${INSTALL_DIR}/venv/bin/pip" install -r "${PROJECT_DIR}/requirements.txt"
 if [[ ! -f "${CONFIG_DIR}/config.toml" ]]; then install -m 0640 -o root -g powergateway "${PROJECT_DIR}/config/config.example.toml" "${CONFIG_DIR}/config.toml"; else echo "Vorhandene Konfiguration bleibt erhalten."; install -m 0640 -o root -g powergateway "${PROJECT_DIR}/config/config.example.toml" "${CONFIG_DIR}/config.example.toml"; fi
-for unit in powergateway.service powergateway-web.service powergateway-network.service powergateway-lte-proxy-address.service powergateway-lte-proxy.service powergateway-config-reload.service powergateway-config-reload.path powergateway-wireguard-apply.service powergateway-wireguard-apply.path powergateway-wireguard-status.service powergateway-wireguard-status.timer powergateway-ha-tunnel.service powergateway-noip.service powergateway-noip.timer; do install -m 0644 "${PROJECT_DIR}/packaging/systemd/${unit}" "${SYSTEMD_DIR}/${unit}"; done
+for unit in powergateway.service powergateway-web.service powergateway-network.service powergateway-lte-proxy-address.service powergateway-lte-proxy.service powergateway-config-reload.service powergateway-config-reload.path powergateway-wireguard-apply.service powergateway-wireguard-apply.path powergateway-wireguard-status.service powergateway-wireguard-status.timer powergateway-energy-history.service powergateway-energy-history.timer powergateway-ha-tunnel.service powergateway-noip.service powergateway-noip.timer; do install -m 0644 "${PROJECT_DIR}/packaging/systemd/${unit}" "${SYSTEMD_DIR}/${unit}"; done
 install -d -m 0750 /etc/sudoers.d
 install -m 0440 "${PROJECT_DIR}/packaging/sudoers/powergateway-ha-tunnel" /etc/sudoers.d/powergateway-ha-tunnel
 install -m 0440 "${PROJECT_DIR}/packaging/sudoers/powergateway-certbot" /etc/sudoers.d/powergateway-certbot
@@ -51,9 +51,7 @@ chown root:powergateway "${TLS_DIR}/powergateway.key" "${TLS_DIR}/powergateway.c
 chmod 0640 "${TLS_DIR}/powergateway.key"
 chmod 0644 "${TLS_DIR}/powergateway.crt"
 
-# Bestehende Let's-Encrypt-Installationen reparieren. Ältere Versionen legten
-# Symlinks in geschützte /etc/letsencrypt-Verzeichnisse an, die der Webdienst
-# nicht lesen konnte.
+# Bestehende Let's-Encrypt-Installationen reparieren.
 if [[ -f "${CONFIG_DIR}/letsencrypt.conf" ]]; then
   if ! /usr/local/sbin/powergateway-certbot deploy; then
     echo "Warnung: Vorhandenes Let's-Encrypt-Zertifikat konnte nicht neu bereitgestellt werden." >&2
@@ -75,11 +73,12 @@ chown root:powergateway "${CONFIG_DIR}" "${TLS_DIR}"
 chmod 0755 "${CONFIG_DIR}"
 chmod 0750 "${TLS_DIR}"
 systemctl daemon-reload
-systemctl enable powergateway-network.service powergateway.service powergateway-web.service powergateway-lte-proxy-address.service powergateway-lte-proxy.service powergateway-config-reload.path powergateway-wireguard-apply.path powergateway-wireguard-status.timer powergateway-noip.timer nginx certbot.timer
+systemctl enable powergateway-network.service powergateway.service powergateway-web.service powergateway-lte-proxy-address.service powergateway-lte-proxy.service powergateway-config-reload.path powergateway-wireguard-apply.path powergateway-wireguard-status.timer powergateway-energy-history.timer powergateway-noip.timer nginx certbot.timer
 systemctl restart powergateway-network.service || true
 systemctl restart powergateway-lte-proxy-address.service || true
 systemctl restart powergateway.service powergateway-web.service powergateway-lte-proxy.service || true
-systemctl restart powergateway-config-reload.path powergateway-wireguard-apply.path powergateway-wireguard-status.timer powergateway-noip.timer || true
+systemctl restart powergateway-config-reload.path powergateway-wireguard-apply.path powergateway-wireguard-status.timer powergateway-energy-history.timer powergateway-noip.timer || true
+systemctl start powergateway-energy-history.service || true
 systemctl restart nginx
 systemctl start certbot.timer || true
 if [[ -f "${DATA_DIR}/homeassistant_connector.json" ]] && grep -Eq '"mode"[[:space:]]*:[[:space:]]*"(ssh_mqtt|reverse_ssh_mqtt)"' "${DATA_DIR}/homeassistant_connector.json" && grep -Eq '"enabled"[[:space:]]*:[[:space:]]*true' "${DATA_DIR}/homeassistant_connector.json"; then
@@ -96,5 +95,6 @@ echo "Let's Encrypt: in der Weboberfläche unter HTTPS einrichten."
 echo "Für HTTP-01 müssen Port 80 und 443 von außen erreichbar sein."
 echo "Interner Webdienst: http://${PRIMARY_IP}:8080"
 echo "LTE-Modem im Hotspot: http://192.168.50.254/"
+echo "Energiehistorie: sudo systemctl status powergateway-energy-history.timer --no-pager"
 echo "SSH-Tunnel: sudo systemctl status powergateway-ha-tunnel --no-pager -l"
 echo "SSH-Logs: sudo journalctl -u powergateway-ha-tunnel -f"
