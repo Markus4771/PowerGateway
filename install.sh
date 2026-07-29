@@ -10,7 +10,6 @@ apt-get install -y python3 python3-venv python3-pip usb-modeswitch modemmanager 
 if ! id powergateway >/dev/null 2>&1; then useradd --system --home "${DATA_DIR}" --shell /usr/sbin/nologin powergateway; fi
 usermod -a -G dialout,plugdev powergateway
 if getent group systemd-journal >/dev/null 2>&1; then usermod -a -G systemd-journal powergateway; fi
-# nginx muss den geschützten PowerGateway-Datenordner für HTTP-01 betreten können.
 if id www-data >/dev/null 2>&1; then usermod -a -G powergateway www-data; fi
 install -d -m 0755 "${INSTALL_DIR}" "${CONFIG_DIR}" /etc/wireguard
 install -d -o powergateway -g powergateway -m 0750 "${DATA_DIR}"
@@ -34,22 +33,31 @@ install -m 0755 "${PROJECT_DIR}/packaging/scripts/powergateway-certbot" /usr/loc
 visudo -cf /etc/sudoers.d/powergateway-ha-tunnel
 visudo -cf /etc/sudoers.d/powergateway-certbot
 
-# Lokales HTTPS-Zertifikat nur beim ersten Installieren erzeugen. Ein später
-# ausgestelltes Let's-Encrypt-Zertifikat wird nicht überschrieben.
+# Lokales HTTPS-Zertifikat nur beim ersten Installieren erzeugen.
 if [[ ! -s "${TLS_DIR}/powergateway.key" || ! -s "${TLS_DIR}/powergateway.crt" ]]; then
   HOSTNAME_FQDN="$(hostname -f 2>/dev/null || hostname)"
   HOSTNAME_SHORT="$(hostname)"
   PRIMARY_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
   SAN="DNS:${HOSTNAME_SHORT},DNS:${HOSTNAME_FQDN},DNS:powergateway.local"
   if [[ -n "${PRIMARY_IP}" ]]; then SAN="${SAN},IP:${PRIMARY_IP}"; fi
+  rm -f "${TLS_DIR}/powergateway.key" "${TLS_DIR}/powergateway.crt"
   openssl req -x509 -newkey rsa:3072 -sha256 -nodes -days 825 \
     -keyout "${TLS_DIR}/powergateway.key" \
     -out "${TLS_DIR}/powergateway.crt" \
     -subj "/CN=${HOSTNAME_SHORT}" \
     -addext "subjectAltName=${SAN}"
-  chmod 0640 "${TLS_DIR}/powergateway.key"
-  chmod 0644 "${TLS_DIR}/powergateway.crt"
-  chown root:powergateway "${TLS_DIR}/powergateway.key" "${TLS_DIR}/powergateway.crt"
+fi
+chown root:powergateway "${TLS_DIR}/powergateway.key" "${TLS_DIR}/powergateway.crt"
+chmod 0640 "${TLS_DIR}/powergateway.key"
+chmod 0644 "${TLS_DIR}/powergateway.crt"
+
+# Bestehende Let's-Encrypt-Installationen reparieren. Ältere Versionen legten
+# Symlinks in geschützte /etc/letsencrypt-Verzeichnisse an, die der Webdienst
+# nicht lesen konnte.
+if [[ -f "${CONFIG_DIR}/letsencrypt.conf" ]]; then
+  if ! /usr/local/sbin/powergateway-certbot deploy; then
+    echo "Warnung: Vorhandenes Let's-Encrypt-Zertifikat konnte nicht neu bereitgestellt werden." >&2
+  fi
 fi
 
 install -m 0644 "${PROJECT_DIR}/packaging/nginx/powergateway.conf" /etc/nginx/sites-available/powergateway
@@ -59,16 +67,17 @@ nginx -t
 
 chown -R root:root "${INSTALL_DIR}"
 chmod 0755 "${INSTALL_DIR}"/src/*.py
-# Daten bleiben Eigentum des Dienstkontos; ACME benötigt bewusst andere Rechte.
 chown -R powergateway:powergateway "${DATA_DIR}"
 chown root:powergateway "${ACME_DIR}" "${ACME_DIR}/.well-known" "${ACME_DIR}/.well-known/acme-challenge"
 chmod 0750 "${DATA_DIR}"
 chmod 0755 "${ACME_DIR}" "${ACME_DIR}/.well-known" "${ACME_DIR}/.well-known/acme-challenge"
+chown root:powergateway "${CONFIG_DIR}" "${TLS_DIR}"
+chmod 0755 "${CONFIG_DIR}"
+chmod 0750 "${TLS_DIR}"
 systemctl daemon-reload
 systemctl enable powergateway-network.service powergateway.service powergateway-web.service powergateway-lte-proxy-address.service powergateway-lte-proxy.service powergateway-config-reload.path powergateway-wireguard-apply.path powergateway-wireguard-status.timer powergateway-noip.timer nginx certbot.timer
 systemctl restart powergateway-network.service || true
 systemctl restart powergateway-lte-proxy-address.service || true
-# Zuerst LTE-Proxy auf internem Port starten, danach nginx als alleinigen Port-80-Dienst.
 systemctl restart powergateway.service powergateway-web.service powergateway-lte-proxy.service || true
 systemctl restart powergateway-config-reload.path powergateway-wireguard-apply.path powergateway-wireguard-status.timer powergateway-noip.timer || true
 systemctl restart nginx
