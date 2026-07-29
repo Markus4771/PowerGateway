@@ -9,6 +9,7 @@ import ssh_tunnel_web
 import letsencrypt_web
 import dashboard_runtime
 import energy_history
+import energy_history_professional
 import network_diagnostics_runtime
 import gateway_selector
 import internet_manager
@@ -31,8 +32,6 @@ page=page.replace('refresh();setInterval(refresh,5000);','''async function loadM
 async function loadModuleDiagnostics(){try{const d=await api('/_internal/modules/diagnostics');$('moduleDiagnostics').textContent=JSON.stringify(d,null,2)}catch(e){$('moduleDiagnostics').textContent=e.message;notice(e.message,false)}}
 refresh();setInterval(refresh,5000);''')
 
-# UI-Redesign 1.0: vorhandene Funktionen bleiben erhalten, das Grundlayout wird
-# jedoch zu einer klaren Appliance-Oberfläche mit Seitenleiste und Kopfbereich.
 UI_STYLE = r'''
 :root{--sidebar:#102433;--sidebar-hover:#19384d;--accent:#1677ff;--surface:#fff;--canvas:#f3f6f9;--text:#17212b;--muted:#687784;--line:#dfe7ed;--ok:#14804a;--bad:#bd2c24;--warn:#ad6800}
 body{background:var(--canvas);color:var(--text);min-height:100vh;padding-left:250px}
