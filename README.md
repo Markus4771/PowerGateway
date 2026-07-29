@@ -6,7 +6,7 @@ PowerGateway ist ein modulares Raspberry-Pi- und Debian-Gateway für digitale St
 
 Entwicklungszweig: `feature/ui-redesign-1.0`
 
-Aktuelle Entwicklungsversion: **1.3.7-dev**
+Aktuelle Entwicklungsversion: **1.3.8-dev**
 
 Der Versionsstand in `version.txt` ist verbindlich. PowerGateway befindet sich weiterhin in Entwicklung. Reale Hardware-, Update-, Backup-, Restore- und Langzeittests müssen vor einer stabilen Freigabe abgeschlossen werden.
 
@@ -28,7 +28,7 @@ Der Versionsstand in `version.txt` ist verbindlich. PowerGateway befindet sich w
 - LTE-Signaldiagnose und Speedtest
 - lokale Energiehistorie
 - Export-Center
-- Backup-/Restore-Grundlage
+- Backup & Restore mit Prüfsummen, Import, Vorschau, Aufbewahrung und Audit-Protokoll
 - lokale WebGUI
 - systemd-Dienste und Debian-Paketbau
 
@@ -132,6 +132,8 @@ Home Assistant übernimmt bevorzugt:
 - TLS: `/etc/powergateway/tls`
 - Laufzeitdaten: `/var/lib/powergateway`
 - Exportarchiv: `/var/lib/powergateway/exports`
+- Backuparchiv: `/var/lib/powergateway/backups`
+- Backup-Audit: `/var/lib/powergateway/backup_audit.jsonl`
 - Hauptdienst: `powergateway.service`
 - WebGUI: `powergateway-web.service`
 - interner Web-Port: `8080`
@@ -152,7 +154,7 @@ Hardwareabhängige Funktionen müssen zusätzlich auf realer Zielhardware geprü
 - MQTT- und Home-Assistant-Discovery-Tests
 - LAN/WLAN/LTE/Hotspot-Failover
 - WireGuard- und SSH-Tunnel-Tests
-- Backup- und Restore-Test
+- Backup-Import, Zeitplan und vollständigen Restore auf Zielhardware testen
 - Debian-Installations- und Update-Test
 - Langzeittest auf Raspberry Pi 3B+
 - Sicherheits- und Rechteprüfung
