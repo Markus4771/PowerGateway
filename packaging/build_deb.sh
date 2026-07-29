@@ -37,6 +37,7 @@ usermod -a -G dialout,plugdev powergateway || true
 getent group systemd-journal >/dev/null && usermod -a -G systemd-journal powergateway || true
 install -d -o powergateway -g powergateway -m 0750 /var/lib/powergateway
 install -d -o powergateway -g powergateway -m 0700 /var/lib/powergateway/.ssh
+install -d -o powergateway -g powergateway -m 0750 /var/lib/powergateway/backups /var/lib/powergateway/restore-staging /var/lib/powergateway/restore-rollbacks
 install -d -m 0750 -o root -g powergateway /etc/powergateway
 chown root:powergateway /etc/powergateway/config.toml /etc/powergateway/config.example.toml 2>/dev/null || true
 chmod 0640 /etc/powergateway/config.toml 2>/dev/null || true
@@ -51,20 +52,17 @@ systemctl disable --now powergateway-reverse-ssh.service >/dev/null 2>&1 || true
 rm -f /etc/systemd/system/powergateway-reverse-ssh.service
 rm -f /var/lib/powergateway/reverse_ssh.json /var/lib/powergateway/reverse_ssh_status.json
 rm -f /var/lib/powergateway/.ssh/reverse_ssh_ed25519 /var/lib/powergateway/.ssh/reverse_ssh_ed25519.pub
-# NetworkManager startet fuer ipv4.method=shared eine eigene, auf wlan0
-# begrenzte dnsmasq-Instanz. Ein systemweiter dnsmasq blockiert Port 53 und
-# verhindert dadurch die Hotspot-Aktivierung.
 systemctl disable --now dnsmasq.service >/dev/null 2>&1 || true
 pkill -x dnsmasq >/dev/null 2>&1 || true
 rfkill unblock wifi >/dev/null 2>&1 || true
 nmcli radio wifi on >/dev/null 2>&1 || true
 systemctl daemon-reload
-systemctl enable powergateway-wifi-prepare.service powergateway-network.service powergateway.service powergateway-web.service powergateway-config-reload.path powergateway-wireguard-apply.path powergateway-wireguard-status.timer powergateway-noip.timer
+systemctl enable powergateway-wifi-prepare.service powergateway-network.service powergateway.service powergateway-web.service powergateway-config-reload.path powergateway-wireguard-apply.path powergateway-wireguard-status.timer powergateway-noip.timer powergateway-backup.timer
 systemctl restart powergateway-wifi-prepare.service || true
 systemctl restart NetworkManager.service || true
 systemctl restart powergateway-network.service || true
 systemctl restart powergateway.service powergateway-web.service || true
-systemctl restart powergateway-config-reload.path powergateway-wireguard-apply.path powergateway-wireguard-status.timer powergateway-noip.timer || true
+systemctl restart powergateway-config-reload.path powergateway-wireguard-apply.path powergateway-wireguard-status.timer powergateway-noip.timer powergateway-backup.timer || true
 if [[ -f /var/lib/powergateway/homeassistant_connector.json ]] && grep -Eq '"mode"[[:space:]]*:[[:space:]]*"(ssh_mqtt|reverse_ssh_mqtt)"' /var/lib/powergateway/homeassistant_connector.json && grep -Eq '"enabled"[[:space:]]*:[[:space:]]*true' /var/lib/powergateway/homeassistant_connector.json; then
   systemctl enable --now powergateway-ha-tunnel.service || true
 else
@@ -75,7 +73,7 @@ chmod 0755 "${BUILD_ROOT}/DEBIAN/postinst"
 cat > "${BUILD_ROOT}/DEBIAN/prerm" <<'EOF'
 #!/usr/bin/env bash
 set -e
-for unit in powergateway.service powergateway-web.service powergateway-network.service powergateway-wifi-prepare.service powergateway-config-reload.path powergateway-wireguard-apply.path powergateway-wireguard-status.timer powergateway-noip.timer powergateway-noip.service powergateway-ha-tunnel.service; do systemctl disable --now "$unit" >/dev/null 2>&1 || true; done
+for unit in powergateway.service powergateway-web.service powergateway-network.service powergateway-wifi-prepare.service powergateway-config-reload.path powergateway-wireguard-apply.path powergateway-wireguard-status.timer powergateway-noip.timer powergateway-noip.service powergateway-ha-tunnel.service powergateway-backup.timer powergateway-backup.service; do systemctl disable --now "$unit" >/dev/null 2>&1 || true; done
 EOF
 chmod 0755 "${BUILD_ROOT}/DEBIAN/prerm"
 cat > "${BUILD_ROOT}/DEBIAN/postrm" <<'EOF'

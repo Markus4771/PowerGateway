@@ -1,27 +1,36 @@
 # PowerGateway
 
-PowerGateway ist ein modulares Raspberry-Pi- und Debian-Gateway für digitale Stromzähler. Es liest genau eine aktive Zählerquelle ein und überträgt die Messwerte per MQTT an Home Assistant.
+PowerGateway ist ein modulares Raspberry-Pi- und Debian-Gateway für digitale Stromzähler. Pro Installation wird genau eine aktive Zählerquelle eingelesen, normiert und per MQTT an Home Assistant übertragen.
 
 ## Aktueller Stand
 
-Entwicklungsversion: **0.9.12-dev**
+Entwicklungszweig: `feature/ui-redesign-1.0`
 
-Vorhanden sind:
+Aktuelle Entwicklungsversion: **1.3.8-dev**
 
-- USB-SML-Grundlage mit Geräteerkennung
+Der Versionsstand in `version.txt` ist verbindlich. PowerGateway befindet sich weiterhin in Entwicklung. Reale Hardware-, Update-, Backup-, Restore- und Langzeittests müssen vor einer stabilen Freigabe abgeschlossen werden.
+
+## Vorhandene Funktionen
+
+- USB-SML mit Geräteerkennung, Verbindungstest und OBIS-Auswertung
 - Tasmota MQTT und Generic MQTT
-- MQTT-Assistent mit Verbindungstest, Topic-Suche und JSON-Feldvorschlägen
-- Home-Assistant-Discovery-Grundlage
+- Simulation für Tests
+- MQTT-Assistent mit TLS, Topic-Suche und JSON-Feldvorschlägen
+- Home-Assistant-Discovery
+- lokaler MQTT-Puffer mit Nachsendung
 - LAN, WLAN, LTE und Setup-Hotspot
+- Netzwerkpriorität LAN → WLAN → LTE → Hotspot
+- Unterstützung des ZTE MF833U1 im USB-Ethernet-Modus
 - WireGuard mit Server-, Client- und Peer-Verwaltung
-- SSH- und Reverse-SSH-Verbindung für Home Assistant und MQTT
-- No-IP-DDNS-Schnittstelle mit automatischer Aktualisierung
+- SSH- und Reverse-SSH-Tunnel
+- No-IP-DDNS mit IPv4 und IPv6
+- zentrale Systemübersicht und Diagnose
+- LTE-Signaldiagnose und Speedtest
+- lokale Energiehistorie
+- Export-Center
+- Backup & Restore mit Prüfsummen, Import, Vorschau, Aufbewahrung und Audit-Protokoll
 - lokale WebGUI
-- einfache Benutzerverwaltung
-- Einrichtungsstatus und Systemdiagnose
 - systemd-Dienste und Debian-Paketbau
-
-Der aktuelle Stand ist noch nicht als stabile Version freigegeben. Reale USB-SML-Geräte, Home Assistant, Netzwerk-Failover, LTE, WireGuard, SSH-Tunnel und No-IP müssen weiter praktisch getestet werden.
 
 ## Zielhardware
 
@@ -37,7 +46,6 @@ Der aktuelle Stand ist noch nicht als stabile Version freigegeben. Reale USB-SML
 - Tasmota MQTT
 - Generic MQTT
 - Simulation
-- HTTP später
 
 Es ist immer genau eine Datenquelle aktiv.
 
@@ -46,17 +54,24 @@ Es ist immer genau eine Datenquelle aktiv.
 ```bash
 git clone https://github.com/Markus4771/PowerGateway.git
 cd PowerGateway
+git checkout feature/ui-redesign-1.0
 sudo bash install.sh
 ```
 
 Danach:
 
 ```bash
-sudo systemctl status powergateway --no-pager -l
-sudo systemctl status powergateway-web --no-pager -l
+sudo systemctl status powergateway.service --no-pager -l
+sudo systemctl status powergateway-web.service --no-pager -l
 ```
 
-Die WebGUI ist standardmäßig erreichbar unter:
+Die WebGUI ist je nach Installation erreichbar unter:
+
+```text
+http://IP-DES-GERÄTS
+```
+
+oder direkt über gunicorn:
 
 ```text
 http://IP-DES-GERÄTS:8080
@@ -64,21 +79,29 @@ http://IP-DES-GERÄTS:8080
 
 ## Aktualisierung
 
+Vor dem Update ein Backup erstellen.
+
 ```bash
 cd ~/PowerGateway
+git checkout feature/ui-redesign-1.0
 git pull --ff-only
 sudo bash install.sh
 ```
 
 ## Dokumentation
 
-- [Vollständige Installationsanleitung](INSTALLATION.md)
-- [Installation auf Raspberry Pi](docs/installation/RaspberryPi.md)
-- [Home Assistant anbinden](docs/installation/HomeAssistant.md)
-- [MQTT konfigurieren](docs/configuration/MQTT.md)
-- [USB-SML konfigurieren](docs/configuration/USB-SML.md)
+- [Dokumentationsübersicht](docs/README.md)
+- [Projektbeschreibung](docs/PROJECT.md)
+- [Installationsanleitung](INSTALLATION.md)
+- [Administratorhandbuch](docs/ADMIN_GUIDE.md)
+- [Benutzerhandbuch](docs/USER_GUIDE.md)
+- [Entwicklerhandbuch](docs/DEVELOPER_GUIDE.md)
+- [Raspberry-Pi-Installation](docs/installation/RaspberryPi.md)
+- [Home Assistant](docs/installation/HomeAssistant.md)
+- [MQTT](docs/configuration/MQTT.md)
+- [USB-SML](docs/configuration/USB-SML.md)
 - [Roadmap](docs/roadmap/ROADMAP.md)
-- [Projektkontext](CHATGPT_PROJEKTKONTEXT.md)
+- [Änderungsprotokoll](CHANGELOG.md)
 - [Einstieg für einen neuen Chat](NEUER_CHAT.md)
 
 ## Projektaufteilung
@@ -91,24 +114,31 @@ PowerGateway übernimmt:
 - Home-Assistant-Discovery
 - Netzwerk, LTE, Hotspot und WireGuard
 - SSH-/Reverse-SSH-Verbindungen
-- No-IP-DDNS-Aktualisierung
-- Einrichtung, Status und Diagnose
+- No-IP-DDNS
+- lokale Diagnose, Energiehistorie, Export und Sicherung
 
-Home Assistant übernimmt:
+Home Assistant übernimmt bevorzugt:
 
-- Diagramme
 - Energie-Dashboard
-- Tages-, Monats- und Jahresauswertungen
-- Langzeitstatistiken
-- Automationen und Benachrichtigungen
+- umfassende Langzeitdiagramme
+- Automationen
+- Benachrichtigungen
+- standortübergreifende Auswertungen
 
 ## Typische Pfade
 
 - Programm: `/opt/powergateway`
 - Konfiguration: `/etc/powergateway/config.toml`
+- TLS: `/etc/powergateway/tls`
 - Laufzeitdaten: `/var/lib/powergateway`
+- Exportarchiv: `/var/lib/powergateway/exports`
+- Backuparchiv: `/var/lib/powergateway/backups`
+- Backup-Audit: `/var/lib/powergateway/backup_audit.jsonl`
 - Hauptdienst: `powergateway.service`
 - WebGUI: `powergateway-web.service`
+- interner Web-Port: `8080`
+- interner LTE-Proxy: `8081`
+- nginx: `80` und optional `443`
 
 ## Tests
 
@@ -116,16 +146,19 @@ Home Assistant übernimmt:
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
-## Bewusst nicht enthalten
+Hardwareabhängige Funktionen müssen zusätzlich auf realer Zielhardware geprüft werden.
 
-- lokale Diagramme und Langzeitstatistiken
-- öffentliche REST-API
-- automatische Softwareupdates
-- integrierte Backup- und Wiederherstellungsverwaltung
-- komplexe Rollenverwaltung
-- Batterie-, Wallbox- oder EMS-Steuerung
-- Unterstützung mehrerer Standorte
+## Noch vor einer stabilen Freigabe zu erledigen
+
+- reale USB-SML-Tests
+- MQTT- und Home-Assistant-Discovery-Tests
+- LAN/WLAN/LTE/Hotspot-Failover
+- WireGuard- und SSH-Tunnel-Tests
+- Backup-Import, Zeitplan und vollständigen Restore auf Zielhardware testen
+- Debian-Installations- und Update-Test
+- Langzeittest auf Raspberry Pi 3B+
+- Sicherheits- und Rechteprüfung
 
 ## Lizenz
 
-Die Lizenz wird vor der ersten stabilen Veröffentlichung festgelegt.
+Die Lizenz wird vor der ersten stabilen Veröffentlichung verbindlich festgelegt.

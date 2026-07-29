@@ -1,0 +1,16 @@
+[Unit]
+Description=PowerGateway automatische Sicherung
+After=powergateway.service
+
+[Service]
+Type=oneshot
+User=powergateway
+Group=powergateway
+WorkingDirectory=/opt/powergateway/src
+ExecStart=/usr/bin/python3 /opt/powergateway/src/backup_runner.py
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/etc/powergateway /opt/powergateway
+ReadWritePaths=/var/lib/powergateway

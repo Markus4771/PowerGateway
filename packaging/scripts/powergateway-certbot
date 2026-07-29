@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CONFIG_DIR=/etc/powergateway
+TLS_DIR=${CONFIG_DIR}/tls
+WEBROOT=/var/lib/powergateway/acme
+CONF=${CONFIG_DIR}/letsencrypt.conf
+
+valid_domain() {
+  [[ "$1" =~ ^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$ ]]
+}
+valid_email() {
+  [[ "$1" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]]
+}
+prepare_webroot() {
+  install -d -o powergateway -g powergateway -m 0750 /var/lib/powergateway
+  install -d -o root -g powergateway -m 0755 "$WEBROOT"
+  install -d -o root -g powergateway -m 0755 "$WEBROOT/.well-known"
+  install -d -o root -g powergateway -m 0755 "$WEBROOT/.well-known/acme-challenge"
+}
+load_conf() {
+  DOMAIN=""; EMAIL=""
+  if [[ -f "$CONF" ]]; then
+    # shellcheck disable=SC1090
+    source "$CONF"
+  fi
+}
+deploy() {
+  load_conf
+  [[ -n "$DOMAIN" ]] || { echo "Keine Let's-Encrypt-Domain konfiguriert" >&2; exit 2; }
+  local live="/etc/letsencrypt/live/${DOMAIN}"
+  [[ -s "${live}/fullchain.pem" && -s "${live}/privkey.pem" ]] || { echo "Zertifikat für ${DOMAIN} fehlt" >&2; exit 3; }
+
+  install -d -m 0750 -o root -g powergateway "$TLS_DIR"
+
+  # Keine Symlinks nach /etc/letsencrypt verwenden: Die dortigen Verzeichnisse
+  # sind absichtlich nur für root zugänglich. Stattdessen werden atomar lesbare
+  # Kopien für nginx und den PowerGateway-Dienst bereitgestellt.
+  local cert_tmp key_tmp
+  cert_tmp="$(mktemp "${TLS_DIR}/.powergateway.crt.XXXXXX")"
+  key_tmp="$(mktemp "${TLS_DIR}/.powergateway.key.XXXXXX")"
+  trap 'rm -f "${cert_tmp:-}" "${key_tmp:-}"' EXIT
+
+  install -m 0644 -o root -g powergateway "${live}/fullchain.pem" "$cert_tmp"
+  install -m 0640 -o root -g powergateway "${live}/privkey.pem" "$key_tmp"
+  mv -f "$cert_tmp" "${TLS_DIR}/powergateway.crt"
+  mv -f "$key_tmp" "${TLS_DIR}/powergateway.key"
+  chown root:powergateway "${TLS_DIR}/powergateway.crt" "${TLS_DIR}/powergateway.key"
+  chmod 0644 "${TLS_DIR}/powergateway.crt"
+  chmod 0640 "${TLS_DIR}/powergateway.key"
+  trap - EXIT
+
+  nginx -t
+  systemctl reload nginx
+  echo "Zertifikat für ${DOMAIN} wurde aktiviert und nginx neu geladen."
+}
+
+case "${1:-}" in
+  issue)
+    DOMAIN="${2:-}"; EMAIL="${3:-}"
+    valid_domain "$DOMAIN" || { echo "Ungültiger Domainname" >&2; exit 2; }
+    valid_email "$EMAIL" || { echo "Ungültige E-Mail-Adresse" >&2; exit 2; }
+    prepare_webroot
+    printf 'DOMAIN=%q\nEMAIL=%q\n' "$DOMAIN" "$EMAIL" > "$CONF"
+    chmod 0640 "$CONF"; chown root:powergateway "$CONF"
+    certbot certonly --non-interactive --agree-tos --no-eff-email \
+      --email "$EMAIL" --webroot -w "$WEBROOT" -d "$DOMAIN"
+    deploy
+    systemctl enable --now certbot.timer >/dev/null 2>&1 || true
+    ;;
+  renew)
+    prepare_webroot
+    certbot renew --non-interactive --deploy-hook "/usr/local/sbin/powergateway-certbot deploy"
+    load_conf
+    if [[ -n "$DOMAIN" && -s "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" ]]; then
+      deploy
+    fi
+    ;;
+  deploy)
+    deploy
+    ;;
+  *)
+    echo "Verwendung: $0 {issue DOMAIN EMAIL|renew|deploy}" >&2
+    exit 2
+    ;;
+esac

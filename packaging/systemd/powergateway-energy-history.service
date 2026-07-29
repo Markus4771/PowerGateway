@@ -1,0 +1,15 @@
+[Unit]
+Description=PowerGateway Stromverbrauchshistorie erfassen
+After=powergateway.service
+
+[Service]
+Type=oneshot
+User=powergateway
+Group=powergateway
+WorkingDirectory=/opt/powergateway/src
+ExecStart=/opt/powergateway/venv/bin/python /opt/powergateway/src/energy_history_runner.py
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadOnlyPaths=/etc/powergateway
+ReadWritePaths=/var/lib/powergateway
