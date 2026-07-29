@@ -47,15 +47,35 @@ def _configured() -> dict[str, str]:
 
 def _certificate() -> dict:
     result = {
-        'present': CERT.exists(), 'issuer': '', 'subject': '',
+        'present': False, 'readable': False, 'issuer': '', 'subject': '',
         'not_before': '', 'not_after': '', 'days_remaining': None,
+        'letsencrypt': False,
     }
-    if not CERT.exists():
+    try:
+        result['present'] = CERT.exists()
+    except PermissionError as exc:
+        result['error'] = (
+            'Keine Berechtigung zum Prüfen der Zertifikatsdatei. '
+            'Bitte PowerGateway erneut installieren oder den TLS-Deploy ausführen.'
+        )
+        result['technical_error'] = str(exc)
         return result
+    except OSError as exc:
+        result['error'] = 'Zertifikatsstatus konnte nicht gelesen werden.'
+        result['technical_error'] = str(exc)
+        return result
+
+    if not result['present']:
+        return result
+
     proc = _run(['/usr/bin/openssl', 'x509', '-in', str(CERT), '-noout', '-issuer', '-subject', '-startdate', '-enddate'], 10)
     if proc.returncode != 0:
-        result['error'] = proc.stderr.strip()
+        details = (proc.stderr or proc.stdout).strip()
+        result['error'] = 'Zertifikat ist vorhanden, konnte aber nicht gelesen werden.'
+        result['technical_error'] = details
         return result
+
+    result['readable'] = True
     for line in proc.stdout.splitlines():
         key, _, value = line.partition('=')
         if key == 'issuer':
@@ -83,7 +103,7 @@ def _message(proc: subprocess.CompletedProcess[str], success: str) -> str:
 def _error_hint(message: str) -> str:
     lower = message.lower()
     if 'permission denied' in lower:
-        return 'Der Webserver hat keine Berechtigung auf den ACME-Ordner. Bitte die Installation erneut ausführen.'
+        return 'Ein Dienst hat keine erforderliche Dateiberechtigung. Bitte die Installation erneut ausführen.'
     if 'timeout during connect' in lower:
         return 'Port 80 ist aus dem Internet nicht erreichbar. Bitte Router, Firewall oder DS-Lite prüfen.'
     if 'invalid response' in lower or 'unauthorized' in lower or '404' in lower:
@@ -143,7 +163,7 @@ SECTION = r'''
 '''
 JS = r'''
 async function leApi(url,opt={}){const r=await fetch(url,{cache:'no-store',credentials:'same-origin',...opt});const type=(r.headers.get('content-type')||'').toLowerCase();const text=await r.text();let d={};if(text){if(type.includes('application/json')){try{d=JSON.parse(text)}catch(e){throw new Error('Die Serverantwort enthält ungültiges JSON.')} }else{throw new Error(`Unerwartete Serverantwort (HTTP ${r.status}): ${text.slice(0,180)}`)}}if(r.status===401){location='/login';throw new Error('Sitzung abgelaufen. Bitte erneut anmelden.')}if(!r.ok)throw new Error(d.error||d.message||`HTTP ${r.status}`);return d}
-function showLeStatus(d){const c=d.certificate||{},cfg=d.config||{};$('leStatus').innerHTML=`<div class="status-row"><span>Typ</span><strong>${c.letsencrypt?'Let\'s Encrypt':(c.present?'Lokales/eigenes Zertifikat':'Kein Zertifikat')}</strong></div><div class="status-row"><span>Domain</span><strong>${esc(cfg.domain||'—')}</strong></div><div class="status-row"><span>Aussteller</span><strong>${esc(c.issuer||'—')}</strong></div><div class="status-row"><span>Gültig bis</span><strong>${esc(c.not_after||'—')}</strong></div><div class="status-row"><span>Restlaufzeit</span><strong>${c.days_remaining===null?'—':esc(c.days_remaining+' Tage')}</strong></div><div class="status-row"><span>Automatische Verlängerung</span><strong>${d.timer_enabled&&d.timer_active?'Aktiv':'Nicht aktiv'}</strong></div>`}
+function showLeStatus(d){const c=d.certificate||{},cfg=d.config||{};const err=c.error?`<div class="notice bad">${esc(c.error)}</div>`:'';$('leStatus').innerHTML=err+`<div class="status-row"><span>Typ</span><strong>${c.letsencrypt?'Let\'s Encrypt':(c.present?'Lokales/eigenes Zertifikat':'Kein Zertifikat')}</strong></div><div class="status-row"><span>Lesbar</span><strong>${c.readable?'Ja':'Nein'}</strong></div><div class="status-row"><span>Domain</span><strong>${esc(cfg.domain||'—')}</strong></div><div class="status-row"><span>Aussteller</span><strong>${esc(c.issuer||'—')}</strong></div><div class="status-row"><span>Gültig bis</span><strong>${esc(c.not_after||'—')}</strong></div><div class="status-row"><span>Restlaufzeit</span><strong>${c.days_remaining===null?'—':esc(c.days_remaining+' Tage')}</strong></div><div class="status-row"><span>Automatische Verlängerung</span><strong>${d.timer_enabled&&d.timer_active?'Aktiv':'Nicht aktiv'}</strong></div>`}
 async function loadLetsEncrypt(){try{const d=await leApi('/_internal/letsencrypt');val('leDomain',(d.config||{}).domain||'');val('leEmail',(d.config||{}).email||'');showLeStatus(d)}catch(e){notice(e.message,false)}}
 async function issueLetsEncrypt(){try{$('leResult').textContent='Zertifikat wird angefordert …';const d=await leApi('/_internal/letsencrypt/issue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({domain:$('leDomain').value.trim(),email:$('leEmail').value.trim()})});$('leResult').textContent=[d.message,d.details].filter(Boolean).join('\n\n');notice(d.message,true);await loadLetsEncrypt()}catch(e){$('leResult').textContent=e.message;notice(e.message,false)}}
 async function renewLetsEncrypt(){try{$('leResult').textContent='Verlängerung wird geprüft …';const d=await leApi('/_internal/letsencrypt/renew',{method:'POST'});$('leResult').textContent=[d.message,d.details].filter(Boolean).join('\n\n');notice(d.message,true);await loadLetsEncrypt()}catch(e){$('leResult').textContent=e.message;notice(e.message,false)}}
