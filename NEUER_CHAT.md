@@ -1,113 +1,282 @@
-# Neuer Chat – PowerGateway
+# PowerGateway – Einstieg für neue Chats
 
-Arbeite am GitHub-Projekt `Markus4771/PowerGateway`.
+> **Wichtig:** Diese Datei ist der zentrale Einstiegspunkt für die Weiterentwicklung des Projekts. Vor jeder Entwicklungsarbeit oder bei einem neuen Chat bitte zuerst diese Datei lesen.
 
-## Verbindlicher Arbeitszweig
+## Projektinformationen
 
-Bevorzugter Entwicklungszweig:
+| Eigenschaft | Wert |
+|---|---|
+| Projektname | PowerGateway |
+| Repository | Markus4771/PowerGateway |
+| Lizenz | GPL v3 |
+| Status | Aktiv |
+| Zielsystem | Debian Linux |
+| Programmiersprache | Python 3 |
+| Webserver | nginx |
+| Application Server | gunicorn |
+| Entwicklungsbranch | `feature/ui-redesign-1.0` |
+
+## Projektziel
+
+PowerGateway ist eine modulare Gateway-Software zur Erfassung, Verarbeitung und Übertragung von Energiedaten. Die Software soll auf kostengünstiger Hardware wie einem Raspberry Pi laufen und eine zuverlässige Kommunikation zwischen Stromzähler und Zielsystemen ermöglichen.
+
+Schwerpunkte:
+
+- einfache Installation
+- hohe Stabilität
+- modularer Aufbau
+- einfache Erweiterbarkeit
+- langfristige Wartbarkeit
+- sichere Übertragung über MQTT und WireGuard
+- Anbindung an Home Assistant
+
+## Architekturgrundsätze
+
+- Modularer Aufbau
+- Konfiguration statt Programmierung
+- Plugin-System für Erweiterungen
+- Möglichst geringe Abhängigkeiten
+- Debian-Kompatibilität
+- Neue Ideen zunächst unter `docs/backlog/` dokumentieren
+- GitHub ist das führende Repository
+
+## Unterstützte Hardware
+
+- Raspberry Pi 3B+
+- USB-IR-Lesekopf
+- ZTE MF833U1 LTE-Stick
+- Tasmota-LAN-Geräte
+- WLAN-IR-Lesekopf
+
+Weitere Hardware soll zukünftig über Plugins integriert werden.
+
+## Netzwerkpriorität
+
+1. LAN
+2. WLAN
+3. LTE
+4. Hotspot
+
+Unterstützte beziehungsweise vorgesehene Dienste:
+
+- MQTT
+- WireGuard
+- Home Assistant
+- No-IP
+- lokaler Hotspot für die Ersteinrichtung
+
+## Systemarchitektur
+
+Das Projekt besteht aus eigenständigen Modulen und Diensten, unter anderem:
+
+- WebGUI
+- MQTT
+- LTE
+- WireGuard
+- Pluginverwaltung
+- Energiehistorie
+- Diagnose
+- Logging
+- Updateverwaltung
+- Onboarding
+- Netzwerkverwaltung
+
+Aktuelle Dienststruktur:
+
+- nginx auf Port 80/443
+- gunicorn auf Port 8080
+- LTE-Proxy auf Port 8081
+- TLS-Dateien unter `/etc/powergateway/tls`
+
+## Installationsart
+
+Die bevorzugte Installationsform ist ein Debian-Paket mit:
+
+- systemd
+- nginx
+- gunicorn
+- Python 3
+
+## Repository-Struktur
+
+```text
+docs/
+├── architecture/
+├── api/
+├── backlog/
+└── developer/
+
+hardware/
+examples/
+tests/
+diagnostics/
+compatibility/
+.github/
+```
+
+Die tatsächliche Quellcode-Struktur im Repository ist vor Änderungen immer zu prüfen.
+
+## Aktueller Entwicklungsstand
+
+Aktueller Schwerpunkt:
+
+1. Software vollständig testen
+2. Fehler beheben
+3. Stabilität verbessern
+4. anschließend Dokumentation vervollständigen
+5. stabilen Release vorbereiten
+
+Bereits umgesetzt beziehungsweise vorhanden:
+
+- WebGUI
+- modulare Grundstruktur
+- MQTT-Unterstützung
+- WireGuard-Funktionen
+- Energiehistorie
+- Diagnosefunktionen
+- Plugin-Laufzeit und Modulverwaltung
+- Ereignisdiagnose
+- öffentliche Plugin-Registrierung
+- Debian- und systemd-Integration
+- Repository-Grundstruktur
+- GPL-v3-Lizenz
+
+## Wichtige zuletzt behobene Fehler
+
+### Energiehistorie
+
+Die Historie blieb leer, obwohl Live-Werte vorhanden waren.
+
+Ursache:
+
+- `energy_history_runner.py` erwartete veraltete Schlüssel beziehungsweise Dateien.
+
+Lösung:
+
+- Verwendung von `latest_values.json`
+- Mapping `power_total` → `power_w`
+- Mapping `energy_import` → `energy_kwh`
+
+Zugehöriger Commit:
+
+```text
+8c37e2db0bdacc32d8729e936aa7ea0ce48f8bb9
+```
+
+Der Fehler wurde anschließend erfolgreich getestet.
+
+## Bekannte offene Punkte
+
+- LTE-Erkennung des ZTE MF833U1 weiter prüfen
+- Hotspot-Funktion vollständig testen
+- Netzwerk-Fallback LAN → WLAN → LTE → Hotspot testen
+- WireGuard-Konfiguration und Verbindungsstatus prüfen
+- MQTT-Konfiguration und Übertragung testen
+- Home-Assistant-Anbindung testen
+- Installation und Update über Debian-Paket testen
+- WebGUI vollständig auf Bedienbarkeit prüfen
+- Diagnose- und Logfunktionen vervollständigen
+- TLS- und nginx-Konfiguration testen
+- Dokumentation nach der Stabilisierung vervollständigen
+
+## Dokumentation
+
+Geplante beziehungsweise vorhandene zentrale Dokumente:
+
+- `README.md`
+- `PROJECT.md`
+- `NEUER_CHAT.md`
+- `INSTALLATION.md`
+- `CHANGELOG.md`
+- `ROADMAP.md`
+- `BACKLOG.md`
+- `CONTRIBUTING.md`
+- `SECURITY.md`
+- `LICENSE`
+
+Nicht vorhandene Dokumente dürfen in einem neuen Chat nicht einfach als vorhanden angenommen werden. Zuerst immer das Repository prüfen.
+
+## Entwicklungsregeln
+
+Vor Änderungen:
+
+1. aktuellen Branch prüfen
+2. letzten Commit prüfen
+3. bestehende Architektur analysieren
+4. vorhandene Funktionen nicht unbeabsichtigt entfernen
+5. Änderungen möglichst klein und nachvollziehbar halten
+
+Vor jedem Commit:
+
+- Änderungen testen
+- Fehlerbehandlung prüfen
+- Dokumentation bei Bedarf aktualisieren
+- Versionsnummer prüfen
+- Changelog bei Release-relevanten Änderungen ergänzen
+
+Nach jedem größeren Entwicklungsschritt:
+
+- Änderungen nach GitHub übertragen
+- `NEUER_CHAT.md` aktualisieren
+- bekannte Fehler und nächste Aufgaben aktualisieren
+
+## GitHub-Regeln
+
+Repository:
+
+```text
+Markus4771/PowerGateway
+```
+
+Bevorzugter Entwicklungsbranch:
 
 ```text
 feature/ui-redesign-1.0
 ```
 
-Vor Änderungen prüfen, ob dieser Zweig weiterhin aktuell ist und ob dort unübernommene Änderungen liegen.
+Arbeitsablauf:
 
-## Verbindliche Reihenfolge
+1. bestehenden Stand lesen
+2. entwickeln
+3. testen
+4. Dokumentation aktualisieren
+5. committen
+6. nach GitHub übertragen
 
-1. Lies `CHATGPT_PROJEKTKONTEXT.md`.
-2. Lies `version.txt`, `README.md`, `CHANGELOG.md` und `docs/roadmap/ROADMAP.md`.
-3. Lies `docs/PROJECT.md` und `docs/DEVELOPER_GUIDE.md`.
-4. Prüfe anschließend den tatsächlichen Quellcode und die letzten Commits.
-5. Bestätige zuerst Version, Ist-Stand, Branch und offene Aufgaben.
-6. Entwickle ausschließlich auf Basis des aktuellen GitHub-Stands weiter.
-7. Aktualisiere bei jeder Änderung Tests, Dokumentation und Changelog.
+Nach einem GitHub-Schreibvorgang immer die Commit-SHA nennen.
 
-## Projektziel
+## Ablauf für neue Chats
 
-PowerGateway ist ein modulares Raspberry-Pi- und Debian-Gateway für genau einen digitalen Stromzähler. Es liest eine aktive Quelle ein, normiert die Werte und überträgt sie per MQTT an Home Assistant.
+1. `NEUER_CHAT.md` lesen
+2. aktuellen Repository-Stand prüfen
+3. `README.md` lesen
+4. vorhandene Projekt- und Installationsdokumentation prüfen
+5. letzte Commits ansehen
+6. bekannte Fehler prüfen
+7. aktuelle Prioritäten bestätigen
+8. Entwicklung an der höchsten Priorität fortsetzen
 
-## Zielhardware
+Empfohlener Startsatz:
 
-- Raspberry Pi 3B+ oder neuer
-- Raspberry Pi OS Lite 64 Bit oder Debian
-- optional USB-SML-Lesekopf
-- optional Tasmota-WLAN-Lesekopf
-- optional ZTE MF833U1 oder vergleichbares LTE-Gerät
+> Bitte lies zuerst die `NEUER_CHAT.md` im Repository `Markus4771/PowerGateway` und setze die Entwicklung auf dem aktuellen Branch fort.
 
-## Netzwerkpriorität
+## Hinweise für ChatGPT und weitere Entwickler
 
-```text
-LAN → WLAN → LTE → Setup-Hotspot
-```
+- keine Architekturänderungen ohne nachvollziehbare Begründung
+- modularen Aufbau beibehalten
+- neue Funktionen bevorzugt als Module oder Plugins entwickeln
+- Debian-Kompatibilität sicherstellen
+- Raspberry Pi 3B+ als wichtige Zielplattform berücksichtigen
+- keine unnötigen Abhängigkeiten einführen
+- bestehende Daten und Konfigurationen bei Updates schützen
+- neue Ideen zunächst im Backlog dokumentieren
+- bei Unsicherheit zuerst den aktuellen Repository-Inhalt prüfen
+- keine Dateien, Versionen oder Commits erfinden
 
-Standard-Hotspot:
+## Änderungsverlauf
 
-```text
-SSID: PowerGateway-Setup
-Adresse: 192.168.50.1
-Netz: 192.168.50.0/24
-```
+| Version | Datum | Änderung |
+|---|---|---|
+| 1.0 | 2026-07-29 | Einführung von `NEUER_CHAT.md` als zentralem Einstieg für neue Chats |
 
-## Typische Betriebsdaten
-
-- Programm: `/opt/powergateway`
-- Konfiguration: `/etc/powergateway/config.toml`
-- TLS: `/etc/powergateway/tls`
-- Laufzeitdaten: `/var/lib/powergateway`
-- Exporte: `/var/lib/powergateway/exports`
-- Hauptdienst: `powergateway.service`
-- Webdienst: `powergateway-web.service`
-- gunicorn intern: Port `8080`
-- LTE-Proxy intern: Port `8081`
-- nginx: Port `80` und optional `443`
-
-## Projektgrundsätze
-
-- GitHub ist die verbindliche Quelle.
-- Modularer Aufbau.
-- Konfiguration statt Programmierung.
-- Raspberry Pi und Debian als Hauptziele.
-- Genau eine aktive Zählerquelle.
-- Home Assistant übernimmt umfassende Langzeitvisualisierung und Automationen.
-- Keine Zugangsdaten, privaten Schlüssel oder produktiven Zertifikate ins Repository eintragen.
-- Änderungen müssen dokumentiert, getestet und versioniert werden.
-- Entwicklungsfunktionen nicht als produktionsreif bezeichnen, bevor reale Tests abgeschlossen sind.
-
-## Vorhandene Funktionsbereiche
-
-- USB-SML, Tasmota MQTT, Generic MQTT und Simulation
-- SML-/OBIS-Auswertung
-- MQTT-Assistent und Home-Assistant-Discovery
-- LAN, WLAN, LTE und Setup-Hotspot
-- WireGuard
-- SSH- und Reverse-SSH-Tunnel
-- No-IP mit IPv4 und IPv6
-- Systemübersicht und Diagnose
-- LTE-Signaldiagnose und Speedtest
-- Energiehistorie
-- Export-Center
-- Backup-/Restore-Grundlage
-- Debian-Paket und systemd-Dienste
-
-## Aktuelle Dokumentation
-
-- `docs/README.md`
-- `docs/PROJECT.md`
-- `INSTALLATION.md`
-- `docs/ADMIN_GUIDE.md`
-- `docs/USER_GUIDE.md`
-- `docs/DEVELOPER_GUIDE.md`
-- `CHANGELOG.md`
-
-## Nächste technische Schwerpunkte
-
-1. tatsächlichen Versionsstand und letzte Commits verifizieren
-2. Dokumentation gegen den Quellcode prüfen
-3. USB-SML auf realer Hardware testen
-4. MQTT und Home-Assistant-Discovery praktisch testen
-5. LAN/WLAN/LTE/Hotspot-Failover testen
-6. WireGuard und SSH-Tunnel testen
-7. Backup und Wiederherstellung vollständig testen
-8. Debian-Installation, Update und Deinstallation testen
-9. Langzeittest auf Raspberry Pi 3B+ durchführen
-10. erst danach stabile Release-Kandidaten vorbereiten
+Diese Datei ist ein lebendes Übergabedokument und soll bei größeren Änderungen, neuen Releases oder geänderten Prioritäten aktualisiert werden.
