@@ -8,6 +8,7 @@ import homeassistant_runtime
 import ssh_tunnel_web
 import letsencrypt_web
 import dashboard_runtime
+import energy_history
 import network_diagnostics_runtime
 import gateway_selector
 import internet_manager
