@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Persistente Stromverbrauchshistorie und Dashboard-API für PowerGateway."""
+"""Persistente Stromverbrauchshistorie, Kosten und Vergleichsauswertung."""
 from __future__ import annotations
 
 import argparse
@@ -167,9 +167,64 @@ def _bounds(name: str) -> tuple[int, int, int]:
 
 
 def _settings() -> dict[str, Any]:
-    result = {'price_eur_kwh': 0.31, 'default_range': '7d', 'meter_reset_ts': 0}
+    result = {
+        'tariff_name': 'Standardtarif',
+        'price_eur_kwh': 0.31,
+        'base_fee_monthly_eur': 0.0,
+        'default_range': '7d',
+        'meter_reset_ts': 0,
+    }
     result.update(_read_json(SETTINGS_FILE))
     return result
+
+
+def _period_summary(start: int, end: int, reset_ts: int = 0) -> dict[str, Any]:
+    effective_start = max(start, reset_ts)
+    if effective_start >= end:
+        return {'consumption_kwh': 0.0, 'samples': 0}
+    with _connect() as db:
+        values = db.execute('''SELECT
+            COUNT(*) samples,
+            AVG(power_w) average_power_w,
+            MIN(power_w) minimum_power_w,
+            MAX(power_w) maximum_power_w,
+            AVG(voltage_v) average_voltage_v,
+            AVG(current_a) average_current_a,
+            AVG(frequency_hz) average_frequency_hz,
+            AVG(power_factor) average_power_factor
+            FROM measurements WHERE ts BETWEEN ? AND ?''', (effective_start, end)).fetchone()
+        first_last = db.execute('''SELECT
+            (SELECT energy_kwh FROM measurements WHERE ts BETWEEN ? AND ? AND energy_kwh IS NOT NULL ORDER BY ts ASC LIMIT 1) first_energy,
+            (SELECT energy_kwh FROM measurements WHERE ts BETWEEN ? AND ? AND energy_kwh IS NOT NULL ORDER BY ts DESC LIMIT 1) last_energy,
+            (SELECT power_w FROM measurements WHERE ts BETWEEN ? AND ? AND power_w IS NOT NULL ORDER BY ts DESC LIMIT 1) current_power''', (effective_start, end, effective_start, end, effective_start, end)).fetchone()
+        peak = db.execute('''SELECT ts, power_w FROM measurements
+            WHERE ts BETWEEN ? AND ? AND power_w IS NOT NULL
+            ORDER BY power_w DESC LIMIT 1''', (effective_start, end)).fetchone()
+        power_rows = db.execute('''SELECT ts, power_w FROM measurements
+            WHERE ts BETWEEN ? AND ? AND power_w IS NOT NULL ORDER BY ts''', (effective_start, end)).fetchall()
+    meter_kwh = None
+    if first_last and first_last['first_energy'] is not None and first_last['last_energy'] is not None:
+        meter_kwh = max(0.0, float(first_last['last_energy']) - float(first_last['first_energy']))
+    estimated_kwh = 0.0
+    previous = None
+    for row in power_rows:
+        if previous is not None:
+            estimated_kwh += ((float(previous['power_w']) + float(row['power_w'])) / 2.0) * (int(row['ts']) - int(previous['ts'])) / 3_600_000.0
+        previous = row
+    consumption = meter_kwh if meter_kwh is not None else estimated_kwh
+    return {
+        'current_power_w': first_last['current_power'] if first_last else None,
+        'consumption_kwh': round(consumption, 3),
+        'samples': int(values['samples'] or 0),
+        'average_power_w': values['average_power_w'],
+        'minimum_power_w': values['minimum_power_w'],
+        'maximum_power_w': values['maximum_power_w'],
+        'average_voltage_v': values['average_voltage_v'],
+        'average_current_a': values['average_current_a'],
+        'average_frequency_hz': values['average_frequency_hz'],
+        'average_power_factor': values['average_power_factor'],
+        'peak_timestamp': int(peak['ts']) if peak else None,
+    }
 
 
 def history(name: str) -> dict[str, Any]:
@@ -183,27 +238,47 @@ def history(name: str) -> dict[str, Any]:
             AVG(voltage_v) voltage_v, AVG(current_a) current_a
             FROM measurements WHERE ts BETWEEN ? AND ?
             GROUP BY bucket ORDER BY bucket''', (bucket, bucket, effective_start, end)).fetchall()
-        first_last = db.execute('''SELECT
-            (SELECT energy_kwh FROM measurements WHERE ts BETWEEN ? AND ? AND energy_kwh IS NOT NULL ORDER BY ts ASC LIMIT 1) first_energy,
-            (SELECT energy_kwh FROM measurements WHERE ts BETWEEN ? AND ? AND energy_kwh IS NOT NULL ORDER BY ts DESC LIMIT 1) last_energy,
-            (SELECT power_w FROM measurements WHERE ts BETWEEN ? AND ? AND power_w IS NOT NULL ORDER BY ts DESC LIMIT 1) current_power''', (effective_start, end, effective_start, end, effective_start, end)).fetchone()
-    points = []
-    estimated_kwh = 0.0
-    previous_ts = None
-    previous_power = None
-    for row in rows:
-        ts = int(row['bucket'])
-        power = row['power_w']
-        if previous_ts is not None and previous_power is not None and power is not None:
-            estimated_kwh += ((previous_power + power) / 2.0) * (ts - previous_ts) / 3_600_000.0
-        previous_ts, previous_power = ts, power
-        points.append({'ts': ts, 'power_w': power, 'energy_kwh': (row['energy_max'] - row['energy_min']) if row['energy_min'] is not None and row['energy_max'] is not None else None, 'voltage_v': row['voltage_v'], 'current_a': row['current_a']})
-    meter_kwh = None
-    if first_last and first_last['first_energy'] is not None and first_last['last_energy'] is not None:
-        meter_kwh = max(0.0, float(first_last['last_energy']) - float(first_last['first_energy']))
-    consumption = meter_kwh if meter_kwh is not None else estimated_kwh
+    points = [
+        {
+            'ts': int(row['bucket']),
+            'power_w': row['power_w'],
+            'energy_kwh': (row['energy_max'] - row['energy_min']) if row['energy_min'] is not None and row['energy_max'] is not None else None,
+            'voltage_v': row['voltage_v'],
+            'current_a': row['current_a'],
+        }
+        for row in rows
+    ]
+    summary = _period_summary(start, end, reset_ts)
+    duration = max(1, end - start)
+    previous_start = start - duration
+    previous_end = start
+    previous = _period_summary(previous_start, previous_end, reset_ts)
     price = float(settings.get('price_eur_kwh', 0.31) or 0)
-    return {'ok': True, 'range': name, 'start': effective_start, 'requested_start': start, 'end': end, 'bucket_seconds': bucket, 'points': points, 'summary': {'current_power_w': first_last['current_power'] if first_last else None, 'consumption_kwh': round(consumption, 3), 'cost_eur': round(consumption * price, 2), 'samples': len(points)}, 'settings': settings}
+    base_fee = float(settings.get('base_fee_monthly_eur', 0.0) or 0)
+    proportional_base_fee = base_fee * duration / (30.4375 * 86400)
+    summary['energy_cost_eur'] = round(summary['consumption_kwh'] * price, 2)
+    summary['base_fee_eur'] = round(proportional_base_fee, 2)
+    summary['cost_eur'] = round(summary['energy_cost_eur'] + proportional_base_fee, 2)
+    previous_consumption = float(previous.get('consumption_kwh', 0.0) or 0.0)
+    change = None if previous_consumption <= 0 else round((summary['consumption_kwh'] - previous_consumption) / previous_consumption * 100.0, 1)
+    comparison = {
+        'start': previous_start,
+        'end': previous_end,
+        'consumption_kwh': previous_consumption,
+        'change_percent': change,
+    }
+    return {
+        'ok': True,
+        'range': name,
+        'start': effective_start,
+        'requested_start': start,
+        'end': end,
+        'bucket_seconds': bucket,
+        'points': points,
+        'summary': summary,
+        'comparison': comparison,
+        'settings': settings,
+    }
 
 
 @app.get('/_internal/energy/history')
@@ -228,13 +303,20 @@ def energy_settings_save() -> Response:
     data = request.get_json(silent=True) or {}
     try:
         price = max(0.0, min(10.0, float(data.get('price_eur_kwh', 0.31))))
+        base_fee = max(0.0, min(1000.0, float(data.get('base_fee_monthly_eur', 0.0))))
     except (TypeError, ValueError):
-        return jsonify({'ok': False, 'error': 'Ungültiger Strompreis.'}), 400
+        return jsonify({'ok': False, 'error': 'Ungültige Tarifwerte.'}), 400
     default_range = str(data.get('default_range', '7d'))
     if default_range not in RANGES:
         default_range = '7d'
+    tariff_name = str(data.get('tariff_name', 'Standardtarif')).strip()[:80] or 'Standardtarif'
     settings = _settings()
-    settings.update({'price_eur_kwh': price, 'default_range': default_range})
+    settings.update({
+        'tariff_name': tariff_name,
+        'price_eur_kwh': price,
+        'base_fee_monthly_eur': base_fee,
+        'default_range': default_range,
+    })
     _write_settings(settings)
     return jsonify({'ok': True, 'settings': settings})
 
@@ -257,7 +339,7 @@ def energy_reset_meter_reading() -> Response:
 
 
 SECTION = r'''
-<div class="section energy-panel"><div class="toolbar"><div><h2>Stromverbrauch</h2><div class="muted">Historische Leistung und Verbrauch. Standardmäßig werden die letzten 7 Tage angezeigt.</div></div><div class="energy-controls"><select id="energyRange" onchange="loadEnergyHistory()"><option value="today">Heute</option><option value="yesterday">Gestern</option><option value="7d" selected>7 Tage</option><option value="30d">30 Tage</option><option value="month">Dieser Monat</option><option value="last_month">Letzter Monat</option><option value="year">Dieses Jahr</option></select><select id="energyChartType" onchange="renderEnergyChart()"><option value="line">Linie</option><option value="bar">Balken</option></select><button class="secondary" onclick="loadEnergyHistory()">Aktualisieren</button></div></div><div class="energy-metrics"><div class="card"><div class="muted">Aktuelle Leistung</div><div class="value" id="energyPower">—</div></div><div class="card"><div class="muted">Verbrauch seit Zählerstand-Reset</div><div class="value" id="energyConsumption">—</div></div><div class="card"><div class="muted">Geschätzte Kosten</div><div class="value" id="energyCost">—</div></div><div class="card"><div class="muted">Datenpunkte</div><div class="value" id="energySamples">—</div></div></div><div id="energyChartEmpty" class="muted energy-empty">Noch keine historischen Messwerte vorhanden.</div><svg id="energyChart" role="img" aria-label="Stromverbrauch im gewählten Zeitraum" viewBox="0 0 1000 330" preserveAspectRatio="none"></svg><div class="energy-settings"><label>Strompreis in €/kWh <input id="energyPrice" type="number" min="0" max="10" step="0.001"></label><button class="secondary" onclick="saveEnergySettings()">Preis speichern</button><button class="danger" onclick="resetMeterReading()">Zählerstand zurücksetzen</button><span class="muted" id="energyPeriod"></span><span class="muted" id="energyResetInfo"></span></div><div class="muted energy-reset-note">Dabei werden nur der Bezugspunkt und die Verbrauchsberechnung zurückgesetzt. Messhistorie, Zählerauswahl, Netzwerk, MQTT, Home Assistant, WireGuard und alle weiteren Einstellungen bleiben erhalten.</div></div>
+<div class="section energy-panel"><div class="toolbar"><div><h2>Stromverbrauch</h2><div class="muted">Verbrauch, Kosten, Lastspitzen und Vergleich zum vorherigen Zeitraum.</div></div><div class="energy-controls"><select id="energyRange" onchange="loadEnergyHistory()"><option value="today">Heute</option><option value="yesterday">Gestern</option><option value="7d" selected>7 Tage</option><option value="30d">30 Tage</option><option value="month">Dieser Monat</option><option value="last_month">Letzter Monat</option><option value="year">Dieses Jahr</option></select><select id="energyChartType" onchange="renderEnergyChart()"><option value="line">Linie</option><option value="bar">Balken</option></select><button class="secondary" onclick="loadEnergyHistory()">Aktualisieren</button></div></div><div class="energy-metrics"><div class="card"><div class="muted">Aktuelle Leistung</div><div class="value" id="energyPower">—</div></div><div class="card"><div class="muted">Verbrauch</div><div class="value" id="energyConsumption">—</div></div><div class="card"><div class="muted">Gesamtkosten</div><div class="value" id="energyCost">—</div></div><div class="card"><div class="muted">Vergleich</div><div class="value" id="energyComparison">—</div></div><div class="card"><div class="muted">Durchschnitt</div><div class="value" id="energyAverage">—</div></div><div class="card"><div class="muted">Lastspitze</div><div class="value" id="energyPeak">—</div></div><div class="card"><div class="muted">Ø Spannung</div><div class="value" id="energyVoltage">—</div></div><div class="card"><div class="muted">Datenpunkte</div><div class="value" id="energySamples">—</div></div></div><div id="energyChartEmpty" class="muted energy-empty">Noch keine historischen Messwerte vorhanden.</div><svg id="energyChart" role="img" aria-label="Stromverbrauch im gewählten Zeitraum" viewBox="0 0 1000 330" preserveAspectRatio="none"></svg><div class="energy-settings"><label>Tarifname <input id="energyTariffName" maxlength="80"></label><label>Arbeitspreis €/kWh <input id="energyPrice" type="number" min="0" max="10" step="0.001"></label><label>Grundpreis €/Monat <input id="energyBaseFee" type="number" min="0" max="1000" step="0.01"></label><button class="secondary" onclick="saveEnergySettings()">Tarif speichern</button><button class="danger" onclick="resetMeterReading()">Zählerstand zurücksetzen</button><span class="muted" id="energyPeriod"></span><span class="muted" id="energyResetInfo"></span></div><div class="muted energy-reset-note">Kosten bestehen aus Arbeitspreis und dem anteiligen monatlichen Grundpreis. Beim Zurücksetzen bleiben Messhistorie und Konfiguration erhalten.</div></div>
 '''
 
 STYLE = r'''
@@ -269,8 +351,8 @@ let energyData=null;
 function energyFmt(v,d=1){return v===null||v===undefined||Number.isNaN(Number(v))?'—':Number(v).toLocaleString('de-DE',{minimumFractionDigits:d,maximumFractionDigits:d})}
 function energyDate(ts,range){const d=new Date(ts*1000);return range==='today'||range==='yesterday'?d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}):d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:range==='year'?'2-digit':undefined})}
 function renderEnergyChart(){if(!energyData)return;const svg=$('energyChart'),empty=$('energyChartEmpty'),pts=(energyData.points||[]).filter(p=>p.power_w!==null);if(!pts.length){svg.style.display='none';empty.style.display='block';return}empty.style.display='none';svg.style.display='block';const W=1000,H=330,L=58,R=18,T=20,B=44,max=Math.max(100,...pts.map(p=>Number(p.power_w)||0));const minTs=pts[0].ts,maxTs=pts[pts.length-1].ts||minTs+1;const x=p=>L+(p.ts-minTs)/Math.max(1,maxTs-minTs)*(W-L-R),y=p=>T+(1-(Number(p.power_w)||0)/max)*(H-T-B);let out='';for(let i=0;i<=4;i++){const yy=T+i*(H-T-B)/4,val=max*(1-i/4);out+=`<line class="energy-grid" x1="${L}" y1="${yy}" x2="${W-R}" y2="${yy}"/><text class="energy-axis" x="${L-8}" y="${yy+4}" text-anchor="end">${Math.round(val)} W</text>`}for(let i=0;i<5;i++){const idx=Math.min(pts.length-1,Math.round(i*(pts.length-1)/4)),xx=x(pts[idx]);out+=`<text class="energy-axis" x="${xx}" y="${H-15}" text-anchor="middle">${energyDate(pts[idx].ts,energyData.range)}</text>`}if($('energyChartType').value==='bar'){const bw=Math.max(2,Math.min(30,(W-L-R)/pts.length*.72));out+=pts.map(p=>`<rect class="energy-bar" x="${x(p)-bw/2}" y="${y(p)}" width="${bw}" height="${H-B-y(p)}"><title>${energyDate(p.ts,energyData.range)}: ${energyFmt(p.power_w)} W</title></rect>`).join('')}else{const path=pts.map((p,i)=>`${i?'L':'M'}${x(p).toFixed(1)},${y(p).toFixed(1)}`).join(' ');out+=`<path class="energy-area" d="${path} L${x(pts[pts.length-1])},${H-B} L${x(pts[0])},${H-B} Z"/><path class="energy-line" d="${path}"/>`;out+=pts.filter((p,i)=>i%Math.max(1,Math.floor(pts.length/40))===0).map(p=>`<circle class="energy-dot" cx="${x(p)}" cy="${y(p)}" r="3"><title>${energyDate(p.ts,energyData.range)}: ${energyFmt(p.power_w)} W</title></circle>`).join('')}svg.innerHTML=out}
-async function loadEnergyHistory(){try{const range=$('energyRange').value||'7d';const d=await api('/_internal/energy/history?range='+encodeURIComponent(range));energyData=d;const s=d.summary||{};$('energyPower').textContent=energyFmt(s.current_power_w)+' W';$('energyConsumption').textContent=energyFmt(s.consumption_kwh,3)+' kWh';$('energyCost').textContent=energyFmt(s.cost_eur,2)+' €';$('energySamples').textContent=String(s.samples||0);$('energyPrice').value=(d.settings||{}).price_eur_kwh??0.31;$('energyPeriod').textContent=new Date(d.start*1000).toLocaleString('de-DE')+' – '+new Date(d.end*1000).toLocaleString('de-DE');const reset=(d.settings||{}).meter_reset_ts||0;$('energyResetInfo').textContent=reset?'Letzter Zählerstand-Reset: '+new Date(reset*1000).toLocaleString('de-DE'):'';renderEnergyChart()}catch(e){notice(e.message,false)}}
-async function saveEnergySettings(){try{await api('/_internal/energy/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({price_eur_kwh:Number($('energyPrice').value),default_range:'7d'})});notice('Strompreis gespeichert.',true);await loadEnergyHistory()}catch(e){notice(e.message,false)}}
+async function loadEnergyHistory(){try{const range=$('energyRange').value||'7d';const d=await api('/_internal/energy/history?range='+encodeURIComponent(range));energyData=d;const s=d.summary||{},c=d.comparison||{},cfg=d.settings||{};$('energyPower').textContent=energyFmt(s.current_power_w)+' W';$('energyConsumption').textContent=energyFmt(s.consumption_kwh,3)+' kWh';$('energyCost').textContent=energyFmt(s.cost_eur,2)+' €';$('energyComparison').textContent=c.change_percent===null?'Keine Basis':(c.change_percent>0?'+':'')+energyFmt(c.change_percent,1)+' %';$('energyAverage').textContent=energyFmt(s.average_power_w)+' W';$('energyPeak').textContent=energyFmt(s.maximum_power_w)+' W';$('energyVoltage').textContent=energyFmt(s.average_voltage_v)+' V';$('energySamples').textContent=String(s.samples||0);$('energyTariffName').value=cfg.tariff_name||'Standardtarif';$('energyPrice').value=cfg.price_eur_kwh??0.31;$('energyBaseFee').value=cfg.base_fee_monthly_eur??0;$('energyPeriod').textContent=new Date(d.start*1000).toLocaleString('de-DE')+' – '+new Date(d.end*1000).toLocaleString('de-DE');const reset=cfg.meter_reset_ts||0;$('energyResetInfo').textContent=reset?'Letzter Zählerstand-Reset: '+new Date(reset*1000).toLocaleString('de-DE'):'';renderEnergyChart()}catch(e){notice(e.message,false)}}
+async function saveEnergySettings(){try{await api('/_internal/energy/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tariff_name:$('energyTariffName').value,price_eur_kwh:Number($('energyPrice').value),base_fee_monthly_eur:Number($('energyBaseFee').value),default_range:$('energyRange').value||'7d'})});notice('Stromtarif gespeichert.',true);await loadEnergyHistory()}catch(e){notice(e.message,false)}}
 async function resetMeterReading(){const text='Damit wird ausschließlich der Berechnungs-Zählerstand auf 0 gesetzt. Alte Messwerte und sämtliche Einstellungen bleiben erhalten.\n\nZum Fortfahren exakt eingeben:\nZÄHLERSTAND ZURÜCKSETZEN';const confirmation=prompt(text,'');if(confirmation===null)return;try{const d=await api('/_internal/energy/reset-meter-reading',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirmation})});notice(d.message||'Zählerstand zurückgesetzt.',true);await loadEnergyHistory()}catch(e){notice(e.message,false)}}
 '''
 
