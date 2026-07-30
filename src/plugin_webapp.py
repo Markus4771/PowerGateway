@@ -16,6 +16,7 @@ import backup_center_v138
 import network_diagnostics_runtime
 import gateway_selector
 import internet_manager
+import measurement_export
 from plugin_runtime import manager, module_status
 app=features.app
 legacy=features.legacy
