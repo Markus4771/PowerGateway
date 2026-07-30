@@ -10,6 +10,7 @@ import letsencrypt_web
 import dashboard_runtime
 import energy_history
 import energy_history_professional
+import daily_consumption
 import export_center
 import backup_center
 import backup_center_v138
