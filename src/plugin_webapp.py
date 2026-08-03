@@ -20,6 +20,7 @@ import gateway_selector
 import internet_manager
 import measurement_export
 import energy_resolution_v1312
+import energy_chart_phase2
 from plugin_runtime import manager, module_status
 app=features.app
 legacy=features.legacy
