@@ -22,6 +22,7 @@ import measurement_export
 import energy_resolution_v1312
 import energy_chart_phase2
 import energy_analysis_phase3
+import energy_adaptive_phase4
 from plugin_runtime import manager, module_status
 app=features.app
 legacy=features.legacy
