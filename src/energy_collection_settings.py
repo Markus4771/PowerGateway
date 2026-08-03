@@ -15,6 +15,7 @@ legacy = energy_history.legacy
 runtime = energy_history.runtime
 STATE_FILE = Path('/var/lib/powergateway/energy_collector_state.json')
 ALLOWED_INTERVALS = (5, 10, 30, 60)
+DEFAULT_INTERVAL = 10
 
 
 def _state() -> dict[str, Any]:
@@ -30,11 +31,11 @@ def _state() -> dict[str, Any]:
 def energy_collection_get() -> Response:
     settings = energy_history._settings()
     try:
-        interval = int(settings.get('sample_interval_seconds', 30))
+        interval = int(settings.get('sample_interval_seconds', DEFAULT_INTERVAL))
     except (TypeError, ValueError):
-        interval = 30
+        interval = DEFAULT_INTERVAL
     if interval not in ALLOWED_INTERVALS:
-        interval = 30
+        interval = DEFAULT_INTERVAL
     return jsonify({
         'ok': True,
         'sample_interval_seconds': interval,
@@ -49,7 +50,7 @@ def energy_collection_get() -> Response:
 def energy_collection_save() -> Response:
     data = request.get_json(silent=True) or {}
     try:
-        interval = int(data.get('sample_interval_seconds', 30))
+        interval = int(data.get('sample_interval_seconds', DEFAULT_INTERVAL))
     except (TypeError, ValueError):
         return jsonify({'ok': False, 'error': 'Ungültiges Erfassungsintervall.'}), 400
     if interval not in ALLOWED_INTERVALS:
@@ -70,11 +71,11 @@ STYLE = r'''
 '''
 
 HTML = r'''
-<div class="energy-collection"><label>Messwerterfassung<select id="energySampleInterval"><option value="5">Alle 5 Sekunden</option><option value="10">Alle 10 Sekunden</option><option value="30" selected>Alle 30 Sekunden</option><option value="60">Alle 60 Sekunden</option></select></label><button class="secondary" onclick="saveEnergyCollectionSettings()">Erfassung speichern</button></div><div id="energyCollectionStatus" class="muted energy-collection-status">Rohmesswerte werden ohne Vorverdichtung gespeichert.</div>
+<div class="energy-collection"><label>Messwerterfassung<select id="energySampleInterval"><option value="5">Alle 5 Sekunden</option><option value="10" selected>Alle 10 Sekunden</option><option value="30">Alle 30 Sekunden</option><option value="60">Alle 60 Sekunden</option></select></label><button class="secondary" onclick="saveEnergyCollectionSettings()">Erfassung speichern</button></div><div id="energyCollectionStatus" class="muted energy-collection-status">Rohmesswerte werden ohne Vorverdichtung gespeichert. Tagesansicht: 10 Sekunden.</div>
 '''
 
 JS = r'''
-async function loadEnergyCollectionSettings(){try{const d=await api('/_internal/energy/collection');$('energySampleInterval').value=String(d.sample_interval_seconds||30);const s=d.state||{},last=s.last_result||{};$('energyCollectionStatus').textContent='Rohdatenspeicherung aktiv · Intervall '+(d.sample_interval_seconds||30)+' s'+(last.timestamp?' · letzte Speicherung '+new Date(last.timestamp*1000).toLocaleString('de-DE'):'')}catch(e){$('energyCollectionStatus').textContent=e.message}}
+async function loadEnergyCollectionSettings(){try{const d=await api('/_internal/energy/collection');$('energySampleInterval').value=String(d.sample_interval_seconds||10);const s=d.state||{},last=s.last_result||{};$('energyCollectionStatus').textContent='Rohdatenspeicherung aktiv · Intervall '+(d.sample_interval_seconds||10)+' s'+(last.timestamp?' · letzte Speicherung '+new Date(last.timestamp*1000).toLocaleString('de-DE'):'')}catch(e){$('energyCollectionStatus').textContent=e.message}}
 async function saveEnergyCollectionSettings(){try{const d=await api('/_internal/energy/collection',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sample_interval_seconds:Number($('energySampleInterval').value)})});notice(d.message,true);await loadEnergyCollectionSettings()}catch(e){notice(e.message,false)}}
 '''
 
