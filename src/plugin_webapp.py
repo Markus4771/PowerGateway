@@ -23,6 +23,7 @@ import measurement_export
 import energy_resolution_v1312
 import energy_chart_phase2
 import energy_optional_loader
+import energy_chart_final_renderer
 from plugin_runtime import manager, module_status
 app=features.app
 legacy=features.legacy
