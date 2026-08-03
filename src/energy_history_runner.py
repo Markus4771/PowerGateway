@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""Robuster One-shot-Sammler für die PowerGateway-Energiehistorie.
+"""Robuster Sammler für die PowerGateway-Energiehistorie.
 
 Der Sammler übernimmt bevorzugt die vom Hauptdienst geschriebenen Livewerte aus
-``latest_values.json``. Ältere Installationen mit Messwerten in ``status.json``
-bleiben über ``energy_history.sample()`` kompatibel.
+``latest_values.json``. Im Daemon-Modus werden unveränderte Rohmesswerte in einem
+konfigurierbaren Intervall von 5, 10, 30 oder 60 Sekunden gespeichert.
 """
 from __future__ import annotations
 
+import argparse
 import json
+import signal
 import time
 from pathlib import Path
 from typing import Any
@@ -15,6 +17,9 @@ from typing import Any
 import energy_history
 
 LATEST_VALUES_FILE = Path('/var/lib/powergateway/latest_values.json')
+STATE_FILE = Path('/var/lib/powergateway/energy_collector_state.json')
+ALLOWED_INTERVALS = (5, 10, 30, 60)
+_stop_requested = False
 
 
 def _read_latest_values() -> dict[str, Any]:
@@ -48,6 +53,27 @@ def _find_measurement(data: dict[str, Any], key: str) -> float | None:
     return None
 
 
+def _sample_interval() -> int:
+    settings = energy_history._settings()
+    try:
+        interval = int(settings.get('sample_interval_seconds', 30))
+    except (TypeError, ValueError):
+        interval = 30
+    return interval if interval in ALLOWED_INTERVALS else 30
+
+
+def _write_state(result: dict[str, Any], interval: int) -> None:
+    state = {
+        'updated_at': int(time.time()),
+        'sample_interval_seconds': interval,
+        'last_result': result,
+    }
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    temporary = STATE_FILE.with_suffix('.tmp')
+    temporary.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding='utf-8')
+    temporary.replace(STATE_FILE)
+
+
 def _sample_latest_values() -> dict[str, Any]:
     data = _read_latest_values()
     if not data:
@@ -68,6 +94,7 @@ def _sample_latest_values() -> dict[str, Any]:
             'available_keys': sorted(data.keys()),
         }
 
+    # Jeder Erfassungszeitpunkt bleibt als eigener Rohdatensatz erhalten.
     ts = int(time.time())
     with energy_history._connect() as db:
         db.execute(
@@ -93,21 +120,54 @@ def _sample_latest_values() -> dict[str, Any]:
     }
 
 
-def main() -> int:
-    # Datenbank und Schema immer anlegen, auch bevor der erste Messwert da ist.
-    with energy_history._connect():
-        pass
-
+def sample_once() -> dict[str, Any]:
     result = _sample_latest_values()
     if not result.get('ok'):
-        # Abwärtskompatibilität für ältere Datenformate.
         fallback = energy_history.sample()
         result = fallback if fallback.get('ok') else {
             'ok': True,
             'status': 'waiting',
             'message': result.get('message') or fallback.get('message') or 'Noch keine Messwerte vorhanden.',
         }
+    return result
 
+
+def _request_stop(_signum: int, _frame: object) -> None:
+    global _stop_requested
+    _stop_requested = True
+
+
+def run_daemon() -> int:
+    signal.signal(signal.SIGTERM, _request_stop)
+    signal.signal(signal.SIGINT, _request_stop)
+    print(json.dumps({'ok': True, 'status': 'started', 'interval': _sample_interval()}, ensure_ascii=False), flush=True)
+
+    while not _stop_requested:
+        started = time.monotonic()
+        interval = _sample_interval()
+        result = sample_once()
+        _write_state(result, interval)
+        print(json.dumps(result, ensure_ascii=False), flush=True)
+        remaining = max(0.0, interval - (time.monotonic() - started))
+        deadline = time.monotonic() + remaining
+        while not _stop_requested and time.monotonic() < deadline:
+            time.sleep(min(0.5, deadline - time.monotonic()))
+    print(json.dumps({'ok': True, 'status': 'stopped'}, ensure_ascii=False), flush=True)
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--daemon', action='store_true', help='Messwerte dauerhaft im konfigurierten Intervall erfassen')
+    args = parser.parse_args()
+
+    with energy_history._connect():
+        pass
+    if args.daemon:
+        return run_daemon()
+
+    result = sample_once()
+    _write_state(result, _sample_interval())
     print(json.dumps(result, ensure_ascii=False))
     return 0
 
