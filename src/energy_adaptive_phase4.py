@@ -16,18 +16,25 @@ runtime = previous.runtime
 
 MIN_POINTS = 300
 DEFAULT_POINTS = 1400
-MAX_POINTS = 2000
-NICE_BUCKETS = (5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600,
-                7200, 14400, 21600, 43200, 86400, 172800, 604800)
+MAX_POINTS = 10000
+ONE_DAY_SECONDS = 86400
+ONE_DAY_BUCKET = 10
+NICE_BUCKETS = (
+    5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600,
+    7200, 14400, 21600, 43200, 86400, 172800, 604800,
+)
 
 
 def _nice_bucket(duration: int, max_points: int) -> int:
-    """Wählt das kleinste gut lesbare Intervall unterhalb der Punktgrenze."""
+    """Ein Tag bleibt bei 10 s; längere Zeiträume werden adaptiv verdichtet."""
+    if duration <= ONE_DAY_SECONDS:
+        return ONE_DAY_BUCKET
+
     required = max(1, math.ceil(duration / max(1, max_points)))
     try:
-        sample_interval = int(energy_history._settings().get('sample_interval_seconds', 30))
+        sample_interval = int(energy_history._settings().get('sample_interval_seconds', 10))
     except (TypeError, ValueError):
-        sample_interval = 30
+        sample_interval = 10
     required = max(required, sample_interval)
     for bucket in NICE_BUCKETS:
         if bucket >= required:
@@ -56,10 +63,12 @@ def adaptive_history(start: int, end: int, max_points: int) -> dict[str, Any]:
                 GROUP BY bucket ORDER BY bucket''',
             (bucket, bucket, start, end),
         ).fetchall()
+
     points = []
     raw_samples = 0
     for row in rows:
-        raw_samples += int(row['samples'] or 0)
+        samples = int(row['samples'] or 0)
+        raw_samples += samples
         points.append({
             'ts': int(row['bucket']),
             'power_w': row['power_w'],
@@ -74,8 +83,9 @@ def adaptive_history(start: int, end: int, max_points: int) -> dict[str, Any]:
             'current_a': row['current_a'],
             'frequency_hz': row['frequency_hz'],
             'power_factor': row['power_factor'],
-            'samples': int(row['samples'] or 0),
+            'samples': samples,
         })
+
     return {
         'ok': True,
         'start': start,
@@ -86,6 +96,7 @@ def adaptive_history(start: int, end: int, max_points: int) -> dict[str, Any]:
         'raw_sample_count': raw_samples,
         'max_points': max_points,
         'adaptive': True,
+        'one_day_high_resolution': duration <= ONE_DAY_SECONDS,
         'points': points,
     }
 
@@ -99,10 +110,10 @@ def energy_adaptive_history() -> Response:
         max_points = int(request.args.get('max_points', str(DEFAULT_POINTS)))
     except (TypeError, ValueError):
         return jsonify({'ok': False, 'error': 'Ungültige Zeit- oder Punktangabe.'}), 400
+
     max_points = max(MIN_POINTS, min(MAX_POINTS, max_points))
     if start <= 0 or end <= start:
         return jsonify({'ok': False, 'error': 'Der angeforderte Zeitraum ist ungültig.'}), 400
-    # Schutz vor versehentlich extrem großen Abfragen.
     if end - start > 10 * 365 * 86400:
         return jsonify({'ok': False, 'error': 'Der Zeitraum darf höchstens zehn Jahre umfassen.'}), 400
     return jsonify(adaptive_history(start, end, max_points))
@@ -114,15 +125,14 @@ STYLE = r'''
 
 SCRIPT = r'''
 let energyFullStart=null,energyFullEnd=null,energyAdaptiveTimer=null,energyAdaptiveRequest=0;
-function energyAdaptiveLimit(){const svg=$('energyChart');const width=svg?svg.getBoundingClientRect().width:1200;return Math.max(300,Math.min(2000,Math.round(width*1.35)))}
+function energyAdaptiveLimit(){const svg=$('energyChart');const width=svg?svg.getBoundingClientRect().width:1200;const span=(energyViewEnd||0)-(energyViewStart||0);if(span>0&&span<=86400)return 10000;return Math.max(300,Math.min(2000,Math.round(width*1.35)))}
 function energyAdaptiveText(seconds){const s=Number(seconds)||0;if(s<60)return s+' s';if(s<3600)return Math.round(s/60)+' min';if(s<86400)return (s/3600).toLocaleString('de-DE',{maximumFractionDigits:1})+' Std';return (s/86400).toLocaleString('de-DE',{maximumFractionDigits:1})+' Tage'}
 function energyAdaptiveStatus(text,loading=false){const el=$('energyAdaptiveStatus');if(!el)return;el.textContent=text;el.classList.toggle('loading',loading)}
 async function energyFetchAdaptive(start,end){if(!energyData||!Number.isFinite(start)||!Number.isFinite(end)||end<=start)return;const requestId=++energyAdaptiveRequest;energyAdaptiveStatus('Details werden geladen …',true);try{const maxPoints=energyAdaptiveLimit();const d=await api('/_internal/energy/adaptive-history?start='+Math.floor(start)+'&end='+Math.ceil(end)+'&max_points='+maxPoints);if(requestId!==energyAdaptiveRequest)return;energyData.points=d.points||[];energyData.bucket_seconds=d.bucket_seconds;energyData.adaptive_meta=d;energyViewStart=d.start;energyViewEnd=d.end;renderEnergyChart();energyAdaptiveStatus((d.point_count||0).toLocaleString('de-DE')+' Punkte · '+energyAdaptiveText(d.bucket_seconds)+' · '+(d.raw_sample_count||0).toLocaleString('de-DE')+' Rohwerte')}catch(e){if(requestId===energyAdaptiveRequest)energyAdaptiveStatus('Adaptive Abfrage fehlgeschlagen')}}
 function energyScheduleAdaptive(start=null,end=null,delay=180){clearTimeout(energyAdaptiveTimer);const s=start??energyViewStart,e=end??energyViewEnd;if(!Number.isFinite(s)||!Number.isFinite(e))return;energyAdaptiveTimer=setTimeout(()=>energyFetchAdaptive(s,e),delay)}
 const energyPhase4OriginalLoad=loadEnergyHistory;
 loadEnergyHistory=async function(){await energyPhase4OriginalLoad();if(!energyData)return;energyFullStart=Number(energyData.requested_start||energyData.start);energyFullEnd=Number(energyData.end);const pts=energyData.points||[];if(pts.length){energyViewStart=energyFullStart;energyViewEnd=energyFullEnd;energyScheduleAdaptive(energyFullStart,energyFullEnd,0)}};
-const energyPhase4OriginalZoom=energyZoomBy;
-energyZoomBy=function(factor,center=null){if(!energyData)return;const fullStart=energyFullStart??energyData.start,fullEnd=energyFullEnd??energyData.end;const start=energyViewStart??fullStart,end=energyViewEnd??fullEnd,mid=center??((start+end)/2);let span=Math.max(30,(end-start)*factor);span=Math.min(fullEnd-fullStart,span);let ns=mid-span/2,ne=mid+span/2;if(ns<fullStart){ne+=fullStart-ns;ns=fullStart}if(ne>fullEnd){ns-=ne-fullEnd;ne=fullEnd}energyViewStart=Math.max(fullStart,ns);energyViewEnd=Math.min(fullEnd,ne);energyScheduleAdaptive(energyViewStart,energyViewEnd);};
+energyZoomBy=function(factor,center=null){if(!energyData)return;const fullStart=energyFullStart??energyData.start,fullEnd=energyFullEnd??energyData.end;const start=energyViewStart??fullStart,end=energyViewEnd??fullEnd,mid=center??((start+end)/2);let span=Math.max(10,(end-start)*factor);span=Math.min(fullEnd-fullStart,span);let ns=mid-span/2,ne=mid+span/2;if(ns<fullStart){ne+=fullStart-ns;ns=fullStart}if(ne>fullEnd){ns-=ne-fullEnd;ne=fullEnd}energyViewStart=Math.max(fullStart,ns);energyViewEnd=Math.min(fullEnd,ne);energyScheduleAdaptive(energyViewStart,energyViewEnd)};
 energyResetZoom=function(){if(!energyData)return;energyViewStart=energyFullStart??energyData.start;energyViewEnd=energyFullEnd??energyData.end;energyScheduleAdaptive(energyViewStart,energyViewEnd,0)};
 window.addEventListener('resize',()=>{if(energyViewStart&&energyViewEnd)energyScheduleAdaptive(energyViewStart,energyViewEnd,350)});
 '''
