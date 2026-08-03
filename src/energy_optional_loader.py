@@ -35,5 +35,11 @@ def load_optional(module_name: str) -> None:
         LOGGER.exception('Optionales PowerGateway-Modul %s konnte nicht geladen werden', module_name)
 
 
-for _module in ('energy_analysis_phase3', 'energy_adaptive_phase4'):
+# Der Renderer-Fallback wird bewusst zuletzt geladen. Dadurch überschreibt er
+# keine Daten- oder Analysefunktionen, stellt aber renderEnergyChart immer bereit.
+for _module in (
+    'energy_analysis_phase3',
+    'energy_adaptive_phase4',
+    'energy_chart_runtime_fix',
+):
     load_optional(_module)
