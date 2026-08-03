@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""Robuster Sammler für die PowerGateway-Energiehistorie.
-
-Der Sammler übernimmt bevorzugt die vom Hauptdienst geschriebenen Livewerte aus
-``latest_values.json``. Im Daemon-Modus werden unveränderte Rohmesswerte in einem
-konfigurierbaren Intervall von 5, 10, 30 oder 60 Sekunden gespeichert.
-"""
+"""Dauerhafter Sammler für die PowerGateway-Energiehistorie."""
 from __future__ import annotations
 
 import argparse
@@ -19,6 +14,7 @@ import energy_history
 LATEST_VALUES_FILE = Path('/var/lib/powergateway/latest_values.json')
 STATE_FILE = Path('/var/lib/powergateway/energy_collector_state.json')
 ALLOWED_INTERVALS = (5, 10, 30, 60)
+DEFAULT_INTERVAL = 10
 _stop_requested = False
 
 
@@ -56,10 +52,10 @@ def _find_measurement(data: dict[str, Any], key: str) -> float | None:
 def _sample_interval() -> int:
     settings = energy_history._settings()
     try:
-        interval = int(settings.get('sample_interval_seconds', 30))
+        interval = int(settings.get('sample_interval_seconds', DEFAULT_INTERVAL))
     except (TypeError, ValueError):
-        interval = 30
-    return interval if interval in ALLOWED_INTERVALS else 30
+        interval = DEFAULT_INTERVAL
+    return interval if interval in ALLOWED_INTERVALS else DEFAULT_INTERVAL
 
 
 def _write_state(result: dict[str, Any], interval: int) -> None:
@@ -94,7 +90,6 @@ def _sample_latest_values() -> dict[str, Any]:
             'available_keys': sorted(data.keys()),
         }
 
-    # Jeder Erfassungszeitpunkt bleibt als eigener Rohdatensatz erhalten.
     ts = int(time.time())
     with energy_history._connect() as db:
         db.execute(
@@ -148,10 +143,10 @@ def run_daemon() -> int:
         result = sample_once()
         _write_state(result, interval)
         print(json.dumps(result, ensure_ascii=False), flush=True)
-        remaining = max(0.0, interval - (time.monotonic() - started))
-        deadline = time.monotonic() + remaining
+        deadline = time.monotonic() + max(0.0, interval - (time.monotonic() - started))
         while not _stop_requested and time.monotonic() < deadline:
             time.sleep(min(0.5, deadline - time.monotonic()))
+
     print(json.dumps({'ok': True, 'status': 'stopped'}, ensure_ascii=False), flush=True)
     return 0
 
