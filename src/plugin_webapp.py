@@ -9,6 +9,7 @@ import ssh_tunnel_web
 import letsencrypt_web
 import dashboard_runtime
 import energy_history
+import energy_history_visibility
 import energy_collection_settings
 import energy_history_professional
 import daily_consumption
