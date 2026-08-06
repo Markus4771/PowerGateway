@@ -6,6 +6,7 @@ import logging
 
 import powergateway as core
 import service
+import sml_live_runtime
 from runtime_config import merged_config
 
 
@@ -27,6 +28,10 @@ def main() -> int:
     if source_name in {"tasmota", "tasmota_mqtt", "wifi_tasmota"}:
         return service.run_tasmota_source(configuration)
     service.enable_simulation_if_configured()
+    # Ein bereits empfangenes SML-Frame wird genau einmal dekodiert und für
+    # Dashboard, Statusdatei und Energiehistorie bereitgestellt. Der serielle
+    # Port wird weiterhin ausschließlich vom Hauptdienst geöffnet.
+    sml_live_runtime.install(core)
     return core.main()
 
 
