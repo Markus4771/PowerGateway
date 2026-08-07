@@ -20,10 +20,12 @@ import network_diagnostics_runtime
 import gateway_selector
 import internet_manager
 import measurement_export
+import measurement_export_streaming
 import energy_resolution_v1312
 import energy_chart_phase2
 import energy_optional_loader
 import energy_chart_final_renderer
+import energy_history_management
 from plugin_runtime import manager, module_status
 app=features.app
 legacy=features.legacy
