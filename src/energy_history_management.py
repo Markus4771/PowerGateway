@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sqlite3
 from datetime import datetime
@@ -51,7 +52,8 @@ def _backup_database(stamp: str) -> str | None:
         return None
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
     destination = BACKUP_DIR / f'energy_history-before-delete-{stamp}.sqlite3'
-    with sqlite3.connect(DB_FILE, timeout=20) as source, sqlite3.connect(destination) as target:
+    with sqlite3.connect(DB_FILE, timeout=30) as source, sqlite3.connect(destination) as target:
+        source.execute('PRAGMA busy_timeout=30000')
         source.backup(target)
     return str(destination)
 
@@ -63,6 +65,30 @@ def _backup_jsonl(stamp: str) -> str | None:
     destination = BACKUP_DIR / f'measurement_history-before-delete-{stamp}.jsonl'
     shutil.copy2(JSONL_FILE, destination)
     return str(destination)
+
+
+def _delete_jsonl_range(start: int, end: int) -> int:
+    if not JSONL_FILE.exists():
+        return 0
+    deleted = 0
+    temporary = JSONL_FILE.with_suffix('.jsonl.delete.tmp')
+    with measurement_export._lock:
+        with JSONL_FILE.open('r', encoding='utf-8') as source, temporary.open('w', encoding='utf-8') as target:
+            for line in source:
+                try:
+                    record = json.loads(line)
+                except (ValueError, json.JSONDecodeError):
+                    target.write(line)
+                    continue
+                ts = _record_epoch(record)
+                if ts is not None and start <= ts <= end:
+                    deleted += 1
+                else:
+                    target.write(line)
+            target.flush()
+            os.fsync(target.fileno())
+        temporary.replace(JSONL_FILE)
+    return deleted
 
 
 @app.post('/_internal/energy/history-delete')
@@ -78,35 +104,32 @@ def energy_history_delete() -> Response:
         return jsonify({'ok': False, 'error': str(exc)}), 400
     if end < start:
         start, end = end, start
+
     stamp = datetime.now().astimezone().strftime('%Y%m%d-%H%M%S')
-    db_backup = _backup_database(stamp)
-    jsonl_backup = _backup_jsonl(stamp)
+    try:
+        db_backup = _backup_database(stamp)
+        with measurement_export._lock:
+            jsonl_backup = _backup_jsonl(stamp)
+    except (OSError, sqlite3.Error) as exc:
+        return jsonify({'ok': False, 'error': f'Backup vor dem Löschen fehlgeschlagen: {exc}'}), 500
 
     deleted_db = 0
-    if DB_FILE.exists():
-        with sqlite3.connect(DB_FILE, timeout=20) as db:
-            cursor = db.execute('DELETE FROM measurements WHERE ts BETWEEN ? AND ?', (start, end))
-            deleted_db = max(0, int(cursor.rowcount or 0))
-            db.commit()
-
-    deleted_jsonl = 0
-    kept: list[str] = []
-    if JSONL_FILE.exists():
-        with JSONL_FILE.open('r', encoding='utf-8') as handle:
-            for line in handle:
-                try:
-                    record = json.loads(line)
-                except (ValueError, json.JSONDecodeError):
-                    kept.append(line)
-                    continue
-                ts = _record_epoch(record)
-                if ts is not None and start <= ts <= end:
-                    deleted_jsonl += 1
-                else:
-                    kept.append(line)
-        temporary = JSONL_FILE.with_suffix('.jsonl.tmp')
-        temporary.write_text(''.join(kept), encoding='utf-8')
-        temporary.replace(JSONL_FILE)
+    try:
+        if DB_FILE.exists():
+            with sqlite3.connect(DB_FILE, timeout=30) as db:
+                db.execute('PRAGMA busy_timeout=30000')
+                cursor = db.execute('DELETE FROM measurements WHERE ts BETWEEN ? AND ?', (start, end))
+                deleted_db = max(0, int(cursor.rowcount or 0))
+                db.commit()
+                db.execute('PRAGMA wal_checkpoint(PASSIVE)')
+        deleted_jsonl = _delete_jsonl_range(start, end)
+    except (OSError, sqlite3.Error) as exc:
+        return jsonify({
+            'ok': False,
+            'error': f'Löschen fehlgeschlagen: {exc}',
+            'database_backup': db_backup,
+            'diagnostic_backup': jsonl_backup,
+        }), 500
 
     return jsonify({
         'ok': True,
@@ -138,6 +161,7 @@ async function deleteEnergyHistoryRange(){
   if(!start||!end){if(out)out.textContent='Bitte Von und Bis auswählen.';return;}
   const typed=window.prompt('Zur Bestätigung HISTORIE LÖSCHEN eingeben:','');
   if(typed!=='HISTORIE LÖSCHEN'){if(out)out.textContent='Löschen abgebrochen.';return;}
+  if(out)out.textContent='Backup wird erstellt und Zeitraum gelöscht …';
   try{
     const d=await api('/_internal/energy/history-delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({start:start,end:end,confirmation:typed})});
     if(out)out.textContent=`${d.deleted_database_rows||0} Historienwerte und ${d.deleted_diagnostic_snapshots||0} Diagnose-Snapshots gelöscht. Backup wurde angelegt.`;
