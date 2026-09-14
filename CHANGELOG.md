@@ -1,5 +1,34 @@
 # Änderungsprotokoll
 
+## 1.5.2-dev – 2026-09-14
+
+- Momentanleistung des SML-Zählers wird zusätzlich über `power_total` und OBIS `1-0:16.7.0*255` erkannt
+- neuer Live-Endpunkt für die aktuelle Leistung ergänzt; Fallback zwischen `latest_values.json` und `status.json`
+- Dashboard-Anbindung für aktuelle Leistung nachgezogen
+- Energiehistorie um fehlende Leistungs-Aliase ergänzt
+- Diagramm-Zoom und Verschieben stabilisiert
+- Zoom-Grenzen werden bei einem Wechsel des Zeitraums sauber zurückgesetzt
+- bestehender speicherschonender Streaming-CSV-Export bleibt aktiv
+- gezieltes Löschen historischer Daten über Von-/Bis-Zeitpunkt ergänzt bzw. gehärtet
+- automatische SQLite- und JSONL-Sicherungen vor Löschvorgängen
+- gleichzeitige Zugriffe auf die Diagnosehistorie beim Löschen abgesichert
+- Webanwendung bindet die neuen 1.5.2-Runtime-Erweiterungen ein
+- README und Installations-/Updatehinweise auf 1.5.2-dev aktualisiert
+
+## 1.5.1-dev – 2026-09-14
+
+- Streaming-CSV-Export für große Messwertdateien ergänzt
+- gezieltes Löschen historischer Daten mit automatischer Sicherung ergänzt
+- finalen Energiechart-Renderer um Zoom, Pan und Doppelklick-Reset erweitert
+- Ursache behoben, bei der der finale Renderer die interaktive Zoom-Funktion überschrieben hat
+
+## 1.5.0-dev – 2026-09-14
+
+- SML-Livewerte werden aus demselben empfangenen Telegramm dekodiert
+- `latest_values.json` für normalisierte Livewerte ergänzt
+- `last_measurement`, Messwertliste und direkte Schlüssel in `status.json` ergänzt
+- aktuelle Leistung und Energiezählerwerte für Historie und Dashboard verfügbar gemacht
+
 ## 0.9.29-dev – 2026-07-25
 
 - Setup-Hotspot standardmäßig als dauerhaftes lokales Administrationsnetz konfiguriert
