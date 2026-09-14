@@ -9,6 +9,7 @@ import energy_history
 
 app = energy_history.app
 legacy = energy_history.legacy
+runtime = energy_history.runtime
 DATA_DIR = Path('/var/lib/powergateway')
 LATEST_FILE = DATA_DIR / 'latest_values.json'
 STATUS_FILE = DATA_DIR / 'status.json'
@@ -78,3 +79,43 @@ def live_power() -> Response:
         source = 'status.json'
         received_at = status.get('measurement_received_at') or status.get('last_message_at') or status.get('updated_at')
     return jsonify({'ok': value is not None, 'power_w': value, 'source': source, 'received_at': received_at, 'obis': '1-0:16.7.0*255'})
+
+
+CARD = r'''
+<div class="section card" id="livePowerCard">
+  <div class="toolbar">
+    <div><h3>Momentane Leistung</h3><div class="muted">Direktwert aus dem SML-Telegramm · OBIS 1-0:16.7.0*255</div></div>
+    <div class="value" id="livePowerValue">– W</div>
+  </div>
+  <div class="muted" id="livePowerTimestamp">Noch kein Messwert empfangen.</div>
+</div>
+'''
+SCRIPT = r'''
+async function loadLivePower(){
+  const value=document.getElementById('livePowerValue');
+  const stamp=document.getElementById('livePowerTimestamp');
+  if(!value)return;
+  try{
+    const d=await api('/_internal/power/live');
+    if(d.ok&&Number.isFinite(Number(d.power_w))){
+      value.textContent=Number(d.power_w).toLocaleString('de-DE',{maximumFractionDigits:0})+' W';
+      if(stamp)stamp.textContent=d.received_at?'Letzter Messwert: '+new Date(d.received_at).toLocaleString('de-DE'):'Livewert empfangen';
+    }else{
+      value.textContent='– W';
+      if(stamp)stamp.textContent='Noch kein auswertbarer Leistungswert vorhanden.';
+    }
+  }catch(e){
+    value.textContent='– W';
+    if(stamp)stamp.textContent=e.message;
+  }
+}
+document.addEventListener('DOMContentLoaded',function(){loadLivePower();setInterval(loadLivePower,5000)});
+'''
+
+page = runtime.PAGE
+marker = '<div class="section energy-panel">'
+if marker in page:
+    page = page.replace(marker, CARD + marker, 1)
+page = page.replace('</body>', '<script>' + SCRIPT + '</script></body>', 1)
+runtime.PAGE = page
+legacy.PAGE = page
