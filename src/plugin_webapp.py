@@ -26,6 +26,7 @@ import energy_chart_phase2
 import energy_optional_loader
 import energy_chart_final_renderer
 import energy_history_management
+import power_dashboard_v152
 from plugin_runtime import manager, module_status
 app=features.app
 legacy=features.legacy
