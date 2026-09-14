@@ -6,9 +6,19 @@ PowerGateway ist ein modulares Raspberry-Pi- und Debian-Gateway für digitale St
 
 Entwicklungszweig: `feature/ui-redesign-1.0`
 
-Aktuelle Entwicklungsversion: **1.3.8-dev**
+Aktuelle Entwicklungsversion: **1.5.2-dev**
 
 Der Versionsstand in `version.txt` ist verbindlich. PowerGateway befindet sich weiterhin in Entwicklung. Reale Hardware-, Update-, Backup-, Restore- und Langzeittests müssen vor einer stabilen Freigabe abgeschlossen werden.
+
+### Neu in 1.5.2-dev
+
+- Momentanleistung aus SML wird ausdrücklich über `power_total` bzw. OBIS `1-0:16.7.0*255` erkannt
+- Live-Leistungswert wird für Dashboard und Energiehistorie bereitgestellt
+- Diagramm-Zoom und Verschieben wurden stabilisiert; ein Zeitraumwechsel setzt den Zoom sauber zurück
+- CSV-Messwertexport verwendet einen speicherschonenden Streaming-Endpunkt
+- Historische Energiedaten können gezielt über einen Von-/Bis-Zeitraum gelöscht werden
+- Vor dem Löschen werden automatische Sicherungen von SQLite- und Diagnosehistorie angelegt
+- Gleichzeitige Zugriffe auf die Diagnosehistorie beim Löschen werden geschützt
 
 ## Vorhandene Funktionen
 
@@ -26,8 +36,9 @@ Der Versionsstand in `version.txt` ist verbindlich. PowerGateway befindet sich w
 - No-IP-DDNS mit IPv4 und IPv6
 - zentrale Systemübersicht und Diagnose
 - LTE-Signaldiagnose und Speedtest
-- lokale Energiehistorie
-- Export-Center
+- lokale Energiehistorie mit Diagramm, Zoom und Zeitraumverwaltung
+- Export-Center und Messwert-CSV-Streamingexport
+- gezieltes Löschen historischer Messwerte mit vorheriger Sicherung
 - Backup & Restore mit Prüfsummen, Import, Vorschau, Aufbewahrung und Audit-Protokoll
 - lokale WebGUI
 - systemd-Dienste und Debian-Paketbau
@@ -83,10 +94,27 @@ Vor dem Update ein Backup erstellen.
 
 ```bash
 cd ~/PowerGateway
-git checkout feature/ui-redesign-1.0
-git pull --ff-only
+git fetch origin
+git switch feature/ui-redesign-1.0
+git reset --hard origin/feature/ui-redesign-1.0
 sudo bash install.sh
 ```
+
+Danach die Dienste neu starten:
+
+```bash
+sudo systemctl restart powergateway.service
+sudo systemctl restart powergateway-energy-history.service
+sudo systemctl restart powergateway-web.service
+```
+
+Versionsprüfung:
+
+```bash
+cat /opt/powergateway/version.txt
+```
+
+Erwarteter Stand: `1.5.2-dev`.
 
 ## Dokumentation
 
@@ -131,10 +159,14 @@ Home Assistant übernimmt bevorzugt:
 - Konfiguration: `/etc/powergateway/config.toml`
 - TLS: `/etc/powergateway/tls`
 - Laufzeitdaten: `/var/lib/powergateway`
+- Energiehistorie: `/var/lib/powergateway/energy_history.sqlite3`
+- aktuelle dekodierte Messwerte: `/var/lib/powergateway/latest_values.json`
+- Diagnosehistorie: `/var/lib/powergateway/measurement_history.jsonl`
 - Exportarchiv: `/var/lib/powergateway/exports`
 - Backuparchiv: `/var/lib/powergateway/backups`
 - Backup-Audit: `/var/lib/powergateway/backup_audit.jsonl`
 - Hauptdienst: `powergateway.service`
+- Energiehistorie: `powergateway-energy-history.service`
 - WebGUI: `powergateway-web.service`
 - interner Web-Port: `8080`
 - interner LTE-Proxy: `8081`
@@ -150,7 +182,8 @@ Hardwareabhängige Funktionen müssen zusätzlich auf realer Zielhardware geprü
 
 ## Noch vor einer stabilen Freigabe zu erledigen
 
-- reale USB-SML-Tests
+- reale USB-SML-Langzeittests
+- Live-Watt-Anzeige, Diagramm-Zoom, CSV-Streamingexport und Zeitraum-Löschung auf realer Zielhardware verifizieren
 - MQTT- und Home-Assistant-Discovery-Tests
 - LAN/WLAN/LTE/Hotspot-Failover
 - WireGuard- und SSH-Tunnel-Tests
