@@ -40,6 +40,33 @@ class BufferTests(unittest.TestCase):
             buffer.trim(1)
             self.assertEqual(buffer.count(), 1)
 
+    def test_message_buffer_persistence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            db_path = str(Path(directory) / "persistent_buffer.db")
+            buffer1 = powergateway.MessageBuffer(db_path)
+            try:
+                buffer1.add("sensors/power", '{"power": 1200}', qos=1, retain=False)
+                buffer1.add("sensors/voltage", '{"voltage": 230}', qos=0, retain=True)
+                buffer1.add("sensors/current", '{"current": 5.2}', qos=2, retain=False)
+            finally:
+                buffer1.connection.close()
+
+            buffer2 = powergateway.MessageBuffer(db_path)
+            try:
+                self.assertEqual(buffer2.count(), 3)
+                pending = buffer2.pending(limit=10)
+                self.assertEqual(len(pending), 3)
+                self.assertEqual(
+                    [(topic, payload, qos, retain) for _, topic, payload, qos, retain in pending],
+                    [
+                        ("sensors/power", '{"power": 1200}', 1, False),
+                        ("sensors/voltage", '{"voltage": 230}', 0, True),
+                        ("sensors/current", '{"current": 5.2}', 2, False),
+                    ],
+                )
+            finally:
+                buffer2.connection.close()
+
 
 if __name__ == "__main__":
     unittest.main()
