@@ -116,6 +116,66 @@ compatibility/
 
 Die tatsächliche Quellcode-Struktur im Repository ist vor Änderungen immer zu prüfen.
 
+## Übergabe: aktueller Stand 1.5.2-dev (2026-11-11)
+
+**Verbindliche Quelle:** GitHub-Branch `feature/ui-redesign-1.0`; Version immer mit `version.txt` abgleichen. Die Angaben in älteren Abschnitten dieser Datei sind historische Projektinformationen und können veraltet sein.
+
+### Zuletzt umgesetzte Funktionen und Korrekturen
+
+- USB-SML-Zähler Iskra/Iskraemeco MT691: Telegramme und OBIS-Dekodierung wurden anhand exportierter Messwerte nachgewiesen. `1-0:16.7.0*255` liefert die Momentanleistung (`power_total`, W), `1-0:1.8.0*255` den Bezug (`energy_import`, kWh), `1-0:2.8.0*255` die Einspeisung (`energy_export`, kWh).
+- `src/sml_live_runtime.py` ergänzt dekodierte Messwerte im Hauptdienst ohne zweiten seriellen Leser und schreibt `/var/lib/powergateway/latest_values.json`; `src/service_runtime.py` aktiviert die Integration.
+- `src/power_dashboard_v152.py` erweitert die Leistungszuordnung um `power_total` und den vollständigen OBIS-Code und stellt `GET /_internal/power/live` bereit.
+- `src/measurement_export_streaming.py` stellt den speicherschonenden CSV-Streaming-Endpunkt `/_internal/measurements/export-stream.csv` bereit. Hintergrund war ein gemeldeter `NetworkError when attempting to fetch resource` bei größeren Exporten.
+- `src/energy_history_management.py` ermöglicht das gezielte Löschen historischer Daten nach Von/Bis mit Bestätigung `HISTORIE LÖSCHEN` und automatischer Sicherung vor dem Löschen.
+- `src/energy_chart_final_renderer.py` enthält den interaktiven Diagramm-Renderer mit Zoom, Verschieben und Zurücksetzen. Die ältere statische Überschreibung des Renderers war Ursache des gemeldeten Zoom-Problems.
+- `src/plugin_webapp.py` bindet die genannten Webmodule ein. `README.md` und `CHANGELOG.md` wurden auf 1.5.2-dev nachgezogen.
+
+**Wichtig:** Diese Änderungen wurden in GitHub eingetragen; ein vollständiger erfolgreicher Laufzeit-, Browser- und Hardwaretest der Version 1.5.2-dev auf dem Raspberry Pi ist noch **nicht bestätigt**. Daher keine Produktionsreife oder vollständige Fehlerfreiheit behaupten.
+
+### Nächste Priorität: Praxis- und Regressionstests
+
+1. Webdienst nach Installation auf Import-/Startfehler prüfen.
+2. Momentanleistung im Dashboard mit `latest_values.json`, `status.json` und der OBIS-Ausgabe vergleichen.
+3. Diagramm-Zoom per Mausrad, Bedienelementen und Zeitraumauswahl testen.
+4. CSV-Export mit großem Datensatz und allen Messwerten auf Abbruch und Vollständigkeit prüfen.
+5. Historien-Löschen ausschließlich mit einem **entbehrlichen Testzeitraum** prüfen; Backup und Ergebnis kontrollieren.
+6. Danach weitere Fehler beheben, Tests ergänzen und Versionsnummer erhöhen.
+
+### Installation / Update auf Raspberry Pi
+
+Vor dem Update Konfiguration und Betriebsdaten sichern. `git reset --hard` verwirft lokale, nicht gesicherte Änderungen im Repository.
+
+```bash
+cd ~/PowerGateway
+git fetch origin
+git switch feature/ui-redesign-1.0
+git reset --hard origin/feature/ui-redesign-1.0
+sudo bash install.sh
+sudo systemctl restart powergateway.service
+sudo systemctl restart powergateway-energy-history.service
+sudo systemctl restart powergateway-web.service
+cat /opt/powergateway/version.txt
+```
+
+Erwartete Version: `1.5.2-dev`. Anschließend Weboberfläche mit Strg+F5 neu laden.
+
+### Fehlerdiagnose
+
+```bash
+sudo systemctl status powergateway.service powergateway-web.service powergateway-energy-history.service --no-pager -l
+sudo journalctl -u powergateway-web.service -n 120 --no-pager
+sudo journalctl -u powergateway.service -n 120 --no-pager
+sudo cat /var/lib/powergateway/latest_values.json
+sudo cat /var/lib/powergateway/status.json
+sudo sqlite3 /var/lib/powergateway/energy_history.sqlite3 "SELECT datetime(ts,'unixepoch','localtime'),power_w,energy_kwh FROM measurements ORDER BY ts DESC LIMIT 10;"
+```
+
+Wichtige Datenpfade: `/var/lib/powergateway/energy_history.sqlite3`, `/var/lib/powergateway/measurement_history.jsonl`, `/var/lib/powergateway/latest_values.json`, `/var/lib/powergateway/status.json`.
+
+### Arbeitsanweisung für den nächsten KI-Chat
+
+Bitte **zuerst** `NEUER_CHAT.md`, `version.txt`, `README.md`, `CHANGELOG.md` und die betroffenen Quellcodedateien **im Branch** `feature/ui-redesign-1.0` lesen. Nicht ungeprüft den Default-Branch verwenden. Bestehende Funktionen, Historie und Konfiguration erhalten. Fehler anhand aktueller Logs und Dateien nachvollziehen, dann möglichst kleine Änderungen durchführen, testen, dokumentieren und committen. Nach jedem GitHub-Update die Commit-SHA nennen. Bei fehlenden Raspberry-Pi-Testergebnissen diese ausdrücklich anfordern.
+
 ## Aktueller Entwicklungsstand
 
 Aktueller Schwerpunkt:
